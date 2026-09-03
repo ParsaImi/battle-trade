@@ -1,0 +1,334 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useGuest } from './hooks/useGuest';
+import { useGameSocket } from './hooks/useGameSocket';
+import Lobby from './components/Lobby';
+import MatchView from './components/MatchView';
+import Matchmaking from './components/Matchmaking';
+import ConfirmLeaveDialog from './components/ConfirmLeaveDialog';
+import WagerModal from './components/WagerModal';
+import { MODE_BY_ID } from './components/gameModes';
+import Toast from './components/Toast';
+import Confetti from './components/Confetti';
+import BrandLogo from './components/BrandLogo';
+import { pickOpponent } from './components/bot';
+import { playCorrect, playWrong, playWin, playLose } from './lib/sound';
+import './App.css';
+
+function useCountdown(endsAt) {
+  const [remaining, setRemaining] = useState(0);
+  useEffect(() => {
+    if (!endsAt) return;
+    const tick = () => setRemaining(Math.max(0, Math.round((endsAt - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [endsAt]);
+  return remaining;
+}
+
+function NicknamePrompt({ onSubmit }) {
+  const [value, setValue] = useState('');
+  return (
+    <div className="nickname-screen">
+      <div className="nickname-card">
+        <BrandLogo size={56} />
+        <h1>Welcome to Battle Trade</h1>
+        <p>No real money, ever — just coins and bragging rights.</p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const trimmed = value.trim();
+            if (trimmed) onSubmit(trimmed);
+          }}
+        >
+          <input
+            autoFocus
+            maxLength={20}
+            placeholder="What's your trader name"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+          <button type="submit" disabled={!value.trim()}>
+            Enter the arena
+          </button>
+        </form>
+        <div className="warning-note">
+          <strong>Warning</strong>
+          It's just a game, have fun!
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const { guestId, nickname, setNickname } = useGuest();
+  const {
+    you,
+    leaderboard,
+    quests,
+    modes,
+    match,
+    connected,
+    everConnected,
+    dailyBonus,
+    clearDailyBonus,
+    notice,
+    clearNotice,
+    setAvatar,
+    setTitle,
+    buyAvatar,
+    claimQuest,
+    renameNickname,
+    startMatch,
+    submitGuess,
+    leaveMatch,
+  } = useGameSocket(guestId, nickname);
+  const remaining = useCountdown(match?.phaseEndsAt);
+  const [entering, setEntering] = useState(false);
+  const [opponent, setOpponent] = useState(pickOpponent);
+  const [selectedMode, setSelectedMode] = useState('classic');
+  const [wagerOpen, setWagerOpen] = useState(false);
+  const [pendingWager, setPendingWager] = useState(0);
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
+  const [flash, setFlash] = useState(null);
+  const [confettiKey, setConfettiKey] = useState(null);
+  const [confettiIntense, setConfettiIntense] = useState(false);
+  const [celebrating, setCelebrating] = useState(false);
+  const [toast, setToast] = useState(null);
+  const flashKeyRef = useRef(null);
+
+  // Single toast lane — daily bonus, purchases, quest claims, achievements
+  // and level-ups all surface through here rather than stacking overlays.
+  const pushToast = useCallback((text, kind = 'good') => {
+    setToast({ text, kind, key: `${Date.now()}-${Math.random()}` });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!notice) return;
+    pushToast(notice.text, notice.kind);
+    clearNotice();
+  }, [notice, pushToast, clearNotice]);
+
+  // Keep the locally-cached nickname (what future 'register' calls send on
+  // reconnect) in sync with the server's copy — otherwise a rename made
+  // through Settings gets silently clobbered back on the next reconnect.
+  useEffect(() => {
+    if (you?.nickname && you.nickname !== nickname) {
+      setNickname(you.nickname);
+    }
+  }, [you?.nickname, nickname, setNickname]);
+
+  // Fires a full-screen red/green pulse + a matching beep: once per resolved
+  // round, and once for the final match outcome (a draw gets neither).
+  useEffect(() => {
+    if (!match) {
+      flashKeyRef.current = null;
+      return;
+    }
+    if (match.phase === 'guess' && match.round === 1 && !match.roundOutcome) {
+      flashKeyRef.current = null;
+      return;
+    }
+
+    // 'neutral' covers a held (or timed-out) round: no flash, no sound —
+    // matches the "just watching" rule for Hold.
+    let key = null;
+    let type = null;
+    if (match.phase === 'reveal' && match.roundOutcome) {
+      key = `round-${match.round}`;
+      const { playerDelta } = match.roundOutcome;
+      type = playerDelta > 0 ? 'win' : playerDelta < 0 ? 'loss' : 'neutral';
+    } else if (match.phase === 'complete' && match.matchResult && match.matchResult.outcome !== 'draw') {
+      key = 'complete';
+      type = match.matchResult.outcome === 'win' ? 'win' : 'loss';
+    }
+
+    if (key && type && flashKeyRef.current !== key) {
+      flashKeyRef.current = key;
+      if (type === 'neutral') return;
+      setFlash({ type, key });
+      const t = setTimeout(() => setFlash(null), 750);
+      if (key === 'complete') {
+        if (type === 'win') {
+          const streak = match.matchResult.streak;
+          playWin(streak);
+          setConfettiKey(key + Date.now());
+          if (streak >= 3) {
+            setConfettiIntense(true);
+            setCelebrating(true);
+            setTimeout(() => setCelebrating(false), 500);
+          } else {
+            setConfettiIntense(false);
+          }
+        } else {
+          playLose();
+        }
+      } else {
+        type === 'win' ? playCorrect() : playWrong();
+      }
+      return () => clearTimeout(t);
+    }
+  }, [match]);
+
+  // Daily login bonus toast, self-clearing after a few seconds.
+  useEffect(() => {
+    if (!dailyBonus) return;
+    const t = setTimeout(clearDailyBonus, 3200);
+    return () => clearTimeout(t);
+  }, [dailyBonus, clearDailyBonus]);
+
+  // Announce level-ups and newly-earned achievements once per match result.
+  const announcedRef = useRef(null);
+  useEffect(() => {
+    const result = match?.matchResult;
+    if (!result) return;
+    const stamp = `${result.playerScore}-${result.botScore}-${result.delta}-${result.streak}`;
+    if (announcedRef.current === stamp) return;
+    announcedRef.current = stamp;
+
+    if (result.leveledUpTo) {
+      pushToast(`Level up! You're now level ${result.leveledUpTo}`, 'good');
+    }
+    (result.newAchievements ?? []).forEach((a, i) => {
+      setTimeout(() => pushToast(`${a.icon} Achievement unlocked: ${a.label}`, 'good'), (i + 1) * 900);
+    });
+  }, [match?.matchResult, pushToast]);
+
+  if (!nickname) {
+    return <NicknamePrompt onSubmit={setNickname} />;
+  }
+
+  const activeMode = MODE_BY_ID[selectedMode] ?? MODE_BY_ID.classic;
+
+  const handlePlay = () => {
+    // High Stakes needs a wager chosen before the match can start.
+    if (activeMode.wager) {
+      setWagerOpen(true);
+      return;
+    }
+    setPendingWager(0);
+    setOpponent(pickOpponent());
+    setEntering(true);
+  };
+
+  const handleWagerConfirm = (amount) => {
+    setWagerOpen(false);
+    setPendingWager(amount);
+    setOpponent(pickOpponent());
+    setEntering(true);
+  };
+
+  const handleEnterDone = () => {
+    setEntering(false);
+    startMatch(selectedMode, pendingWager);
+  };
+
+  const handlePlayAgain = () => {
+    setOpponent(pickOpponent());
+    if (activeMode.wager) {
+      setWagerOpen(true);
+      return;
+    }
+    startMatch(selectedMode, 0);
+  };
+
+  const matchInProgress = match && match.phase !== 'complete';
+
+  const requestLeave = () => {
+    if (matchInProgress) {
+      setConfirmLeaveOpen(true);
+    } else {
+      leaveMatch();
+    }
+  };
+
+  const confirmLeave = () => {
+    setConfirmLeaveOpen(false);
+    leaveMatch();
+  };
+
+  return (
+    <div className={`app ${celebrating ? 'celebration-mode' : ''}`}>
+      <header className="topbar">
+        <button
+          type="button"
+          className="brand-link"
+          onClick={() => {
+            if (match) requestLeave();
+          }}
+        >
+          <BrandLogo size={28} />
+          <span className="brand-wordmark">Battle Trade</span>
+        </button>
+        <div className={`conn-dot ${connected ? 'on' : 'off'}`} title={connected ? 'Connected' : 'Reconnecting…'} />
+      </header>
+
+      {everConnected && !connected && (
+        <div className="reconnect-banner">
+          <span className="reconnect-spinner" />
+          Connection lost — reconnecting…
+        </div>
+      )}
+
+      {flash && <div key={flash.key} className={`flash-overlay flash-${flash.type}`} />}
+      {confettiKey && <Confetti key={confettiKey} />}
+      <Toast text={dailyBonus ? `+${dailyBonus} daily login bonus!` : null} toastKey={dailyBonus} />
+      <Toast text={toast?.text} toastKey={toast?.key} kind={toast?.kind} offset={dailyBonus ? 52 : 0} />
+
+      {entering ? (
+        <Matchmaking
+          avatar={you?.avatar || 'bull'}
+          nickname={you?.nickname || nickname}
+          opponent={opponent}
+          onDone={handleEnterDone}
+        />
+      ) : match ? (
+        <MatchView
+          match={match}
+          you={you}
+          opponent={opponent}
+          onGuess={submitGuess}
+          onLeave={requestLeave}
+          onPlayAgain={handlePlayAgain}
+          remaining={remaining}
+        />
+      ) : (
+        <Lobby
+          you={you}
+          guestId={guestId}
+          leaderboard={leaderboard}
+          quests={quests}
+          modes={modes}
+          selectedMode={selectedMode}
+          onSelectMode={setSelectedMode}
+          onSetAvatar={setAvatar}
+          onSetTitle={setTitle}
+          onBuyAvatar={buyAvatar}
+          onClaimQuest={claimQuest}
+          onRename={renameNickname}
+          onPlay={handlePlay}
+        />
+      )}
+
+      {confirmLeaveOpen && (
+        <ConfirmLeaveDialog onConfirm={confirmLeave} onCancel={() => setConfirmLeaveOpen(false)} />
+      )}
+
+      {wagerOpen && (
+        <WagerModal
+          coins={you?.coins ?? 0}
+          options={activeMode.wagerOptions ?? [100, 250, 500, 1000]}
+          onConfirm={handleWagerConfirm}
+          onClose={() => setWagerOpen(false)}
+        />
+      )}
+    </div>
+  );
+}

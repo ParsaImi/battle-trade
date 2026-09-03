@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 1000" width="740" height="1000">
+  <defs>
+    <radialGradient id="felt" cx="62%" cy="18%" r="90%">
+      <stop offset="0%" stop-color="#1d5133" />
+      <stop offset="45%" stop-color="#123a24" />
+      <stop offset="100%" stop-color="#040d08" />
+    </radialGradient>
+
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch" result="noise" />
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.06 0" />
+    </filter>
+
+    <pattern id="dollars" x="18" y="24" width="103" height="108" patternUnits="userSpaceOnUse">
+      <text x="51" y="60" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="34"
+        font-weight="700" fill="none" stroke="#6fae76" stroke-width="1.1" opacity="0.55">$</text>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="740" height="1000" fill="url(#felt)" />
+  <rect x="0" y="0" width="740" height="1000" filter="url(#grain)" />
+  <rect x="0" y="0" width="740" height="1000" fill="url(#dollars)" />
+
+  <rect x="14" y="14" width="712" height="972" fill="none" stroke="#4f7a52" stroke-width="1.5" opacity="0.7" />
+  <rect x="22" y="22" width="696" height="956" fill="none" stroke="#4f7a52" stroke-width="1" opacity="0.5" />
+</svg>

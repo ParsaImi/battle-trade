@@ -1,0 +1,95 @@
+.chart-wrap {
+  position: relative;
+  width: 100%;
+  /* Faint grid behind the candles, like a real terminal, over the glass. */
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px) 0 0 / 100% 40px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px) 0 0 / 52px 100%,
+    var(--glass-bg);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid var(--glass-border);
+  border-top-color: var(--glass-border-top);
+  border-radius: 20px;
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+}
+
+/* Candles carry a soft glow of their own colour so greens/reds pop. */
+.candle-up .body,
+.candle-up .wick {
+  filter: drop-shadow(0 0 4px rgba(0, 229, 143, 0.45));
+}
+
+.candle-down .body,
+.candle-down .wick {
+  filter: drop-shadow(0 0 4px rgba(255, 61, 110, 0.45));
+}
+
+.chart-svg {
+  width: 100%;
+  height: 320px;
+  display: block;
+}
+
+.chart-empty {
+  height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+
+.wick {
+  stroke-width: 1.5;
+}
+
+.body {
+  rx: 1.5;
+}
+
+.candle-up .wick,
+.candle-up .body {
+  stroke: var(--up);
+  fill: var(--up);
+}
+
+.candle-down .wick,
+.candle-down .body {
+  stroke: var(--down);
+  fill: var(--down);
+}
+
+.candle-reveal {
+  opacity: 0;
+  transform: translateY(6px);
+  animation: reveal-in 320ms ease-out forwards;
+}
+
+@keyframes reveal-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.direction-banner {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.direction-up {
+  background: color-mix(in srgb, var(--up) 20%, transparent);
+  color: var(--up);
+}
+
+.direction-down {
+  background: color-mix(in srgb, var(--down) 20%, transparent);
+  color: var(--down);
+}

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 900" width="900" height="900">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="8%" r="95%">
+      <stop offset="0%" stop-color="#16233a" />
+      <stop offset="45%" stop-color="#0d1728" />
+      <stop offset="100%" stop-color="#03060c" />
+    </radialGradient>
+
+    <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#2c3f5e" stroke-width="1" opacity="0.35" />
+    </pattern>
+
+    <pattern id="arrows" x="10" y="14" width="150" height="150" patternUnits="userSpaceOnUse">
+      <text x="0" y="0" font-family="Georgia, serif" font-size="30" fill="#2fd67a" opacity="0.16">▲</text>
+      <text x="80" y="70" font-family="Georgia, serif" font-size="30" fill="#ff5c7c" opacity="0.14">▼</text>
+      <text x="30" y="120" font-family="Georgia, serif" font-size="24" fill="#2fd67a" opacity="0.12">▲</text>
+    </pattern>
+  </defs>
+
+  <rect width="900" height="900" fill="url(#bg)" />
+  <rect width="900" height="900" fill="url(#grid)" />
+  <rect width="900" height="900" fill="url(#arrows)" />
+
+  <rect x="14" y="14" width="872" height="872" fill="none" stroke="#385578" stroke-width="1.5" opacity="0.6" />
+</svg>
