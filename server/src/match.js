@@ -1,4 +1,4 @@
-import { generateChart, splitChart, resolveDirection } from './chart.js';
+import { generateRound, splitChart, resolveDirection } from './chart.js';
 import { applyMatchResult, recordRound, getGuestPublic } from './store.js';
 import { getMode } from './gameModes.js';
 import { makeBotOpponent, opponentFromProfile } from './opponents.js';
@@ -113,7 +113,12 @@ export class Match {
     this.stageRound += 1;
     // One chart per round, shared by both seats — a PvP pair must be looking
     // at exactly the same candles.
-    this.candles = generateChart();
+    const round = generateRound();
+    this.candles = round.candles;
+    // Which instrument and date this window came from. Withheld until the
+    // round resolves: naming it during the guess phase would let a player
+    // look up what the price actually did next.
+    this.chartMeta = round.meta;
     this.visible = splitChart(this.candles).visible;
     this.playerGuess = null;
     this.botGuess = null;
@@ -417,6 +422,8 @@ export class Match {
       stagePlayerScore: myStage,
       stageBotScore: theirStage,
       candles: this.phase === PHASES.GUESS ? this.visible : this.candles,
+      // Only ever sent once the calls are locked in and the chart is revealed.
+      chartMeta: this.phase === PHASES.GUESS ? null : this.chartMeta,
       roundOutcome,
       matchResult: this.results[viewerId] ?? null,
     };

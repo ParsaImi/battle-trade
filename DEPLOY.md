@@ -1,6 +1,22 @@
 # Deploying Battle Trade
 
-Docker Compose, one public port. Everything runs on a single host.
+Docker Compose on a single host. **Play at <https://194-5-97-185.sslip.io/>**.
+
+> ## Serve it over HTTPS. This is not optional.
+>
+> Iranian ISPs (and other filtered networks) let the WebSocket *handshake*
+> through and then drop the frames that follow. The socket upgrades, goes
+> silent, and the game shows a red connection dot forever. Measured against
+> this box from an affected network, same moment:
+>
+> | | `ws://…:80/ws` | `wss://…:443/ws` |
+> |---|---|---|
+> | handshake opened | no | yes (603ms) |
+> | frames received | 0 | full session |
+>
+> Under TLS the frames are opaque and the connection survives. The client
+> follows the page protocol, so serving over https switches it to `wss://`
+> with no code change. `FORCE_HTTPS=1` redirects http to https.
 
 ```
 internet ──▶ :${PUBLIC_PORT} ──▶ web (nginx) ──┬──▶ /     static React bundle
@@ -40,7 +56,28 @@ curl -s localhost:${PUBLIC_PORT:-80}/health
 `/health` returns `{"ok":true,...}` proxied from the game server, so a good
 response proves nginx *and* the server *and* the link between them.
 
-Open `http://<public-ip>:<PUBLIC_PORT>/` in a browser.
+### Get a trusted certificate
+
+```bash
+./scripts/issue-cert.sh
+```
+
+That obtains a Let's Encrypt certificate for `TLS_HOST`, installs it where
+nginx reads it, and turns on the http→https redirect. The `certbot` service
+renews every 12h; nginx reloads every 6h to pick up the new file.
+
+**Why `sslip.io`?** A bare IP cannot be given a publicly trusted certificate.
+`194-5-97-185.sslip.io` resolves straight back to `194.5.97.185`, needs no
+registration or DNS of your own, and is on the Public Suffix List so Let's
+Encrypt treats it as its own domain for rate limits. If you get a real domain,
+point an A record at this box, change `TLS_HOST` in `.env`, and re-run the
+script — nothing else changes.
+
+Until a certificate is issued the entrypoint generates a self-signed one so
+the container still boots. That works technically but every visitor gets a
+browser warning and some browsers refuse outright, so do not ship on it.
+
+Then open **<https://194-5-97-185.sslip.io/>**.
 
 ## Updating
 

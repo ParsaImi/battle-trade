@@ -295,7 +295,12 @@ export default function MatchView({ match, you, opponent, onGuess, onLeave, onPl
         )}
 
         <div className="chart-stage">
-          <CandlestickChart candles={match.candles} roundId={match.round} direction={match.roundOutcome?.direction} />
+          <CandlestickChart
+            candles={match.candles}
+            roundId={match.round}
+            direction={match.roundOutcome?.direction}
+            chartMeta={match.chartMeta}
+          />
           <MarketChatter triggerKey={chatter?.key} direction={chatter?.direction} big={chatter?.big} />
         </div>
 

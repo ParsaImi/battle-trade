@@ -93,3 +93,137 @@
   background: color-mix(in srgb, var(--down) 20%, transparent);
   color: var(--down);
 }
+
+/* ==========================================================================
+   Price readout and axis
+   These class names are new; nothing earlier in this file or App.css targets
+   them, so there is no stale rule to lose to.
+   ========================================================================== */
+
+.chart-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px 4px;
+}
+
+.chart-price-block {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chart-price {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.chart-price.up { color: var(--up); }
+.chart-price.down { color: var(--down); }
+
+.chart-change {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+}
+
+.chart-change.up { color: var(--up); }
+.chart-change.down { color: var(--down); }
+
+.chart-instrument {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  text-align: right;
+  min-width: 0;
+}
+
+.chart-symbol {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.chart-tf {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* Before the reveal the instrument is deliberately withheld. */
+.chart-instrument-hidden .chart-symbol {
+  color: var(--text-dim);
+  letter-spacing: 0.18em;
+}
+
+.chart-plot {
+  position: relative;
+  /* Gutter the axis labels live in, so they never sit on top of a candle. */
+  padding-right: 58px;
+}
+
+.grid-line {
+  stroke: rgba(255, 255, 255, 0.06);
+  stroke-width: 1;
+}
+
+/* Marks where the guess phase ended and the reveal begins. */
+.split-line {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.chart-axis {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 58px;
+  height: 100%;
+  pointer-events: none;
+}
+
+.axis-label,
+.axis-last {
+  position: absolute;
+  right: 6px;
+  transform: translateY(-50%);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.axis-label {
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
+/* The live price gets a pill so it reads apart from the scale behind it. */
+.axis-last {
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 700;
+  color: #06121f;
+}
+
+.axis-last.up { background: var(--up); }
+.axis-last.down { background: var(--down); }
+
+@media (max-width: 460px) {
+  .chart-price { font-size: 18px; }
+  .chart-plot { padding-right: 48px; }
+  .chart-axis { width: 48px; }
+  .axis-label, .axis-last { font-size: 9px; }
+  .chart-header { padding: 8px 10px 2px; }
+}

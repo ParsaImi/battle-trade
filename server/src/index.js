@@ -9,6 +9,7 @@ import { Match } from './match.js';
 import { getMode, publicModeList } from './gameModes.js';
 import { makeBotOpponent, opponentFromProfile } from './opponents.js';
 import * as matchmaking from './matchmaking.js';
+import * as marketData from './marketData.js';
 import { log } from './logger.js';
 import * as store from './store.js';
 
@@ -27,6 +28,11 @@ const START_MATCH_COOLDOWN_MS = 750;
 const PREMATCH_MS = Number(process.env.PREMATCH_MS) || 3_600;
 
 store.load();
+
+// Start pulling real market history in the background. Matches fall back to
+// the synthetic generator until the first batch lands, and whenever the feed
+// is unreachable, so this never blocks startup.
+marketData.start();
 
 const app = express();
 app.use(cors({ origin: ALLOWED_ORIGINS === '*' ? true : ALLOWED_ORIGINS.split(',') }));
@@ -411,6 +417,7 @@ app.get('/health', (_req, res) => {
     ok: true,
     uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     connections: sockets.size,
+    marketBatches: marketData.poolSize(),
     queued: matchmaking.queueSize(),
     players: store.playerCount(),
   });

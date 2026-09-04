@@ -1,5 +1,13 @@
-// Generates a fully fake candlestick series via a random walk. Nothing here
-// reflects any real market — it's just numbers for the game to react to.
+// Candles for a round.
+//
+// Real market history is the default: a random window of a real instrument,
+// with the outcome already settled. When the feed is unavailable the synthetic
+// random walk below stands in, so a match never fails for want of data.
+//
+// Nothing here reflects a live market and none of it is advice — a round is a
+// replay of price action that already happened, used as a guessing game.
+
+import * as market from './marketData.js';
 
 const CANDLE_COUNT = 40;
 const VISIBLE_COUNT = 28; // shown during the guess phase; rest is the "reveal"
@@ -9,7 +17,8 @@ function randRange(min, max) {
   return min + Math.random() * (max - min);
 }
 
-export function generateChart() {
+// Fallback only. Kept because the game must survive a feed outage.
+export function generateSyntheticChart() {
   const candles = [];
   let price = START_PRICE;
 
@@ -34,6 +43,24 @@ export function generateChart() {
   }
 
   return candles;
+}
+
+/**
+ * Candles plus where they came from.
+ *
+ * The `meta` is NOT safe to publish during the guess phase — it names the
+ * instrument and the date, which is the answer. Match only exposes it once the
+ * round has resolved.
+ */
+export function generateRound() {
+  const real = market.getWindow(CANDLE_COUNT, VISIBLE_COUNT);
+  if (real) return real;
+  return { candles: generateSyntheticChart(), meta: { real: false } };
+}
+
+// Back-compat for callers that only want candles (tests, older code paths).
+export function generateChart() {
+  return generateRound().candles;
 }
 
 function round2(n) {
