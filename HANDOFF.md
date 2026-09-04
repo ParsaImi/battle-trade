@@ -152,13 +152,14 @@ Solo modes do **not** affect the win streak.
 
 ## 5. WebSocket protocol
 
-**Client → Server:** `register`, `set_avatar`, `set_title`, `set_nickname`, `buy_avatar`,
+**Client → Server:** `register`, `signup`, `login`, `resume`, `logout`, `set_avatar`, `set_title`,
+`set_nickname`, `buy_avatar`,
 `claim_quest`, `find_match`, `cancel_match`, `match_guess`, `leave_match`
 
 `start_match` is the old name for `find_match` and still works, so a client loaded before the PvP
 update keeps functioning.
 
-**Server → Client:** `registered`, `lobby`, `matchmaking`, `match`, `purchase`, `quest_claimed`,
+**Server → Client:** `registered`, `auth`, `lobby`, `matchmaking`, `match`, `purchase`, `quest_claimed`,
 `match_error`
 
 `matchmaking` carries `{ status }`: `searching` (`waitMs`, `startedAt`), `found` (`opponent`,
@@ -244,6 +245,15 @@ responsive, bottom nav bar, modals for shop/quests/profile/settings/rules, first
    Gauntlet is a scripted AI ladder, so neither should be PvP; **High Stakes could be**, but needs
    a zero-sum wager rule decided first (today the house pays the winner). The queue already keys
    on wager, so enabling it is `pvp: true` in `gameModes.js` plus tests.
+6a. **Accounts (2026-09-04).** Optional, layered on guests — `server/src/accounts.js`.
+   `username -> { salt, hash, guestId }`, so an account simply *owns* a guest id and every other
+   module stays keyed by guestId, unchanged. Signing up binds the guest you already are, so
+   progress carries over. Passwords are scrypt (stdlib, no native dep); session tokens are stored
+   **hashed** in `accounts.json` beside `data.json`. Lockout after 8 failed logins per username,
+   plus 10 auth attempts/min per socket. Unknown username and wrong password return the same
+   error so accounts cannot be enumerated. **Guests still play with no account at all.**
+   Still open: no password reset (no email is collected), and no way to change a password.
+
 6. **Anti-cheat.** Nothing stops opening two tabs with different guest ids. Fine for a casual
    game; matters if leaderboards become competitive.
 7. ~~**Server-side opponent identity.**~~ **DONE.** `client/src/components/bot.js` is gone;

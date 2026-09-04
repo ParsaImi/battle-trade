@@ -6,6 +6,7 @@ import MatchView from './components/MatchView';
 import Matchmaking from './components/Matchmaking';
 import ConfirmLeaveDialog from './components/ConfirmLeaveDialog';
 import WagerModal from './components/WagerModal';
+import AuthModal from './components/AuthModal';
 import { MODE_BY_ID } from './components/gameModes';
 import Toast from './components/Toast';
 import Confetti from './components/Confetti';
@@ -25,7 +26,7 @@ function useCountdown(endsAt) {
   return remaining;
 }
 
-function NicknamePrompt({ onSubmit }) {
+function NicknamePrompt({ onSubmit, onSignIn }) {
   const [value, setValue] = useState('');
   return (
     <div className="nickname-screen">
@@ -51,6 +52,11 @@ function NicknamePrompt({ onSubmit }) {
             Enter the arena
           </button>
         </form>
+        {/* Guest play is the default path; an account is offered, never
+            required. */}
+        <button type="button" className="nickname-alt" onClick={onSignIn}>
+          Already have an account? <span>Sign in</span>
+        </button>
         <div className="warning-note">
           <strong>Warning</strong>
           It's just a game, have fun!
@@ -61,7 +67,12 @@ function NicknamePrompt({ onSubmit }) {
 }
 
 export default function App() {
-  const { guestId, nickname, setNickname } = useGuest();
+  const { guestId, nickname, setNickname, token, setToken } = useGuest();
+  // Declared before useGameSocket because the socket needs to know whether the
+  // sign-in dialog is open: a player with no nickname and no session still
+  // needs a connection to log in on.
+  // null when closed, otherwise 'login' | 'signup'.
+  const [authOpen, setAuthOpen] = useState(null);
   const {
     you,
     leaderboard,
@@ -69,6 +80,10 @@ export default function App() {
     modes,
     match,
     search,
+    account,
+    authError,
+    authBusy,
+    clearAuthError,
     connected,
     everConnected,
     dailyBonus,
@@ -82,9 +97,12 @@ export default function App() {
     renameNickname,
     findMatch,
     cancelSearch,
+    signup,
+    login,
+    logout,
     submitGuess,
     leaveMatch,
-  } = useGameSocket(guestId, nickname);
+  } = useGameSocket(guestId, nickname, token, setToken, authOpen !== null);
   const remaining = useCountdown(match?.phaseEndsAt);
   const [selectedMode, setSelectedMode] = useState('classic');
   const [wagerOpen, setWagerOpen] = useState(false);
@@ -118,10 +136,14 @@ export default function App() {
   // reconnect) in sync with the server's copy — otherwise a rename made
   // through Settings gets silently clobbered back on the next reconnect.
   useEffect(() => {
+    // Only while playing as a guest. The stored nickname belongs to THIS
+    // device's guest, and an account's name is not that — copying it over meant
+    // signing out left the account's name stuck on the local guest.
+    if (account) return;
     if (you?.nickname && you.nickname !== nickname) {
       setNickname(you.nickname);
     }
-  }, [you?.nickname, nickname, setNickname]);
+  }, [account, you?.nickname, nickname, setNickname]);
 
   // Fires a full-screen red/green pulse + a matching beep: once per resolved
   // round, and once for the final match outcome (a draw gets neither).
@@ -199,8 +221,29 @@ export default function App() {
     });
   }, [match?.matchResult, pushToast]);
 
-  if (!nickname) {
-    return <NicknamePrompt onSubmit={setNickname} />;
+  // A saved session skips the prompt entirely — the server will tell us who
+  // this is. Without one, the guest path asks for a name as it always has.
+  if (!nickname && !token) {
+    return (
+      <>
+        <NicknamePrompt onSubmit={setNickname} onSignIn={() => setAuthOpen('login')} />
+        {authOpen && (
+          <AuthModal
+            mode={authOpen}
+            account={account}
+            error={authError}
+            busy={authBusy}
+            onLogin={login}
+            onSignup={signup}
+            onClearError={clearAuthError}
+            onClose={() => {
+              setAuthOpen(null);
+              clearAuthError();
+            }}
+          />
+        )}
+      </>
+    );
   }
 
   const activeMode = MODE_BY_ID[selectedMode] ?? MODE_BY_ID.classic;
@@ -304,11 +347,30 @@ export default function App() {
           onClaimQuest={claimQuest}
           onRename={renameNickname}
           onPlay={handlePlay}
+          account={account}
+          onSignIn={() => setAuthOpen(account ? 'login' : 'signup')}
+          onSignOut={logout}
         />
       )}
 
       {confirmLeaveOpen && (
         <ConfirmLeaveDialog onConfirm={confirmLeave} onCancel={() => setConfirmLeaveOpen(false)} />
+      )}
+
+      {authOpen && (
+        <AuthModal
+          mode={authOpen}
+          account={account}
+          error={authError}
+          busy={authBusy}
+          onLogin={login}
+          onSignup={signup}
+          onClearError={clearAuthError}
+          onClose={() => {
+            setAuthOpen(null);
+            clearAuthError();
+          }}
+        />
       )}
 
       {wagerOpen && (

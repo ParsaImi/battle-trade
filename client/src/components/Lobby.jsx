@@ -57,6 +57,9 @@ export default function Lobby({
   onClaimQuest,
   onRename,
   onPlay,
+  account,
+  onSignIn,
+  onSignOut,
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [titlePickerOpen, setTitlePickerOpen] = useState(false);
@@ -291,7 +294,14 @@ export default function Lobby({
       </nav>
 
       {settingsOpen && (
-        <SettingsModal nickname={you?.nickname} onRename={onRename} onClose={() => setSettingsOpen(false)} />
+        <SettingsModal
+          nickname={you?.nickname}
+          onRename={onRename}
+          account={account}
+          onSignIn={onSignIn}
+          onSignOut={onSignOut}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
       {rulesOpen && (
         <HowToPlayModal

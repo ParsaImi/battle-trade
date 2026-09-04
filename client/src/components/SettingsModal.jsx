@@ -6,7 +6,7 @@ import { useProMode } from '../hooks/useProMode';
 // TODO: swap in your real community link (Discord/Telegram/etc).
 const CONNECT_URL = 'https://discord.gg/replace-with-your-invite';
 
-export default function SettingsModal({ nickname, onRename, onClose }) {
+export default function SettingsModal({ nickname, onRename, account, onSignIn, onSignOut, onClose }) {
   const [name, setName] = useState(nickname || '');
   const [saved, setSaved] = useState(false);
   const [muted, toggleMuted] = useMuted();
@@ -24,6 +24,29 @@ export default function SettingsModal({ nickname, onRename, onClose }) {
   return (
     <Modal onClose={onClose}>
       <h3 className="modal-title">Settings</h3>
+
+      {/* An account is optional. For a guest this is an offer, not a wall. */}
+      <div className="settings-row account-row">
+        <span className="settings-label">Account</span>
+        {account ? (
+          <div className="account-state">
+            <span className="account-name">Signed in as {account}</span>
+            <button type="button" className="account-btn secondary" onClick={onSignOut}>
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <div className="account-state">
+            <span className="account-hint">
+              Playing as a guest. Your coins live only in this browser — create an account to keep
+              them when you switch device.
+            </span>
+            <button type="button" className="account-btn" onClick={onSignIn}>
+              Create account or sign in
+            </button>
+          </div>
+        )}
+      </div>
 
       <form className="settings-row" onSubmit={handleSave}>
         <span className="settings-label">Trader name</span>

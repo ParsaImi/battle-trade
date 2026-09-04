@@ -1,0 +1,18 @@
+{
+  "accounts": {
+    "parsa_test": {
+      "username": "parsa_test",
+      "salt": "c244d0efbf1f726a3b3a4333877afbbb",
+      "hash": "f0fbf758e4550ec13c7993fcf60d85dc66fcfae7f64f0068daf2b95f774dc0a60e182a303fcf95733d02ece122d18ac5af941f0f65bdbb49a6b5edb3df6a6bc3",
+      "guestId": "g_9dzvrd74daimtn2l47i",
+      "createdAt": 1788533412691
+    }
+  },
+  "sessions": {
+    "defd32782b9393fffc71b83ab7d67ef4f9072bb7ba575b46ba775d7f74be7d76": {
+      "username": "parsa_test",
+      "guestId": "g_9dzvrd74daimtn2l47i",
+      "expiresAt": 1791125412691
+    }
+  }
+}

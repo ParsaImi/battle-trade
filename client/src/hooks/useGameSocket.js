@@ -19,7 +19,7 @@ const WS_URL =
     ? `${WS_SCHEME}://${window.location.host}/ws`
     : `${WS_SCHEME}://${window.location.hostname}:${WS_PORT}`);
 
-export function useGameSocket(guestId, nickname) {
+export function useGameSocket(guestId, nickname, token, setToken, wantConnection = false) {
   const [you, setYou] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
   const [quests, setQuests] = useState([]);
@@ -28,6 +28,10 @@ export function useGameSocket(guestId, nickname) {
   // Server-driven matchmaking: { status: 'searching' | 'found', ... }.
   // null means we are not looking for a match.
   const [search, setSearch] = useState(null);
+  // Username when signed in, null when playing as a guest.
+  const [account, setAccount] = useState(null);
+  const [authError, setAuthError] = useState(null);
+  const [authBusy, setAuthBusy] = useState(false);
   // Mirrors `search` for use inside socket callbacks, which close over the
   // state value from the render that created them.
   const searchRef = useRef(null);
@@ -36,6 +40,21 @@ export function useGameSocket(guestId, nickname) {
   const [dailyBonus, setDailyBonus] = useState(null);
   const [notice, setNotice] = useState(null);
   const wsRef = useRef(null);
+  // Socket callbacks close over the render that created them, so the live
+  // token has to be read through a ref.
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+  const nicknameRef = useRef(nickname);
+  nicknameRef.current = nickname;
+
+  // Whether we have anything to connect WITH. Signing in or out changes the
+  // token, and renaming changes the nickname, but neither should tear the
+  // socket down — the callbacks read both through refs. Only going from
+  // "no identity" to "some identity" should open a connection.
+  // `wantConnection` covers the sign-in screen: a player with no nickname and
+  // no session still needs an open socket to log in on, otherwise the sign-in
+  // button would silently do nothing.
+  const hasIdentity = Boolean(nickname || token || wantConnection);
 
   // Always move both together, so callbacks can trust searchRef.
   const applySearch = (value) => {
@@ -44,7 +63,9 @@ export function useGameSocket(guestId, nickname) {
   };
 
   useEffect(() => {
-    if (!nickname) return;
+    // A saved session is enough to connect — a returning player should not
+    // have to type a nickname again just to be let back in.
+    if (!hasIdentity) return;
 
     let cancelled = false;
     let socket;
@@ -67,7 +88,16 @@ export function useGameSocket(guestId, nickname) {
         }
         setConnected(true);
         setEverConnected(true);
-        socket.send(JSON.stringify({ type: 'register', guestId, nickname }));
+        if (tokenRef.current) {
+          // Resume the account session; the server falls us back to guest
+          // if the token has expired or been signed out elsewhere.
+          socket.send(JSON.stringify({ type: 'resume', token: tokenRef.current }));
+        } else if (nicknameRef.current) {
+          socket.send(JSON.stringify({ type: 'register', guestId, nickname: nicknameRef.current }));
+        }
+        // Otherwise stay connected but unregistered: the player is on the
+        // sign-in screen and has not chosen to be anyone yet, so there is no
+        // reason to create a player record for them.
       };
 
       socket.onmessage = (event) => {
@@ -92,6 +122,35 @@ export function useGameSocket(guestId, nickname) {
           }
         } else if (msg.type === 'registered') {
           if (msg.dailyBonus > 0) setDailyBonus(msg.dailyBonus);
+          setAccount(msg.account ?? null);
+          if (msg.token) setToken(msg.token);
+        } else if (msg.type === 'auth') {
+          setAuthBusy(false);
+          if (msg.ok) {
+            setAuthError(null);
+            if (msg.action === 'logout') {
+              setToken('');
+              setAccount(null);
+              setYou(null);
+              // Back to this device's own guest, if it has one. A player who
+              // only ever signed in here has no local guest to fall back to,
+              // so let them land on the entry screen instead of quietly
+              // creating a throwaway record for them.
+              if (nicknameRef.current) {
+                socket.send(JSON.stringify({ type: 'register', guestId, nickname: nicknameRef.current }));
+              }
+            } else {
+              if (msg.token) setToken(msg.token);
+              if (msg.username) setAccount(msg.username);
+            }
+          } else if (msg.action === 'resume') {
+            // Saved session no longer valid — drop it and carry on as a guest.
+            setToken('');
+            setAccount(null);
+            socket.send(JSON.stringify({ type: 'register', guestId, nickname: nicknameRef.current }));
+          } else {
+            setAuthError(authMessage(msg));
+          }
         } else if (msg.type === 'purchase') {
           setNotice(
             msg.ok
@@ -135,7 +194,15 @@ export function useGameSocket(guestId, nickname) {
       clearTimeout(retry);
       socket?.close();
     };
-  }, [guestId, nickname]);
+  }, [guestId, hasIdentity, setToken]);
+
+  // Registers a guest who picks a nickname while the socket is already open
+  // (they opened sign-in first, then backed out and typed a name instead).
+  useEffect(() => {
+    if (!connected || !nickname || token) return;
+    if (you) return;
+    wsRef.current?.send(JSON.stringify({ type: 'register', guestId, nickname }));
+  }, [connected, nickname, token, you, guestId]);
 
   const send = (payload) => wsRef.current?.send(JSON.stringify(payload));
 
@@ -146,6 +213,10 @@ export function useGameSocket(guestId, nickname) {
     modes,
     match,
     search,
+    account,
+    authError,
+    authBusy,
+    clearAuthError: () => setAuthError(null),
     connected,
     everConnected,
     dailyBonus,
@@ -157,6 +228,17 @@ export function useGameSocket(guestId, nickname) {
     buyAvatar: (avatar) => send({ type: 'buy_avatar', avatar }),
     claimQuest: (questId) => send({ type: 'claim_quest', questId }),
     renameNickname: (name) => send({ type: 'set_nickname', nickname: name }),
+    signup: (username, password) => {
+      setAuthBusy(true);
+      setAuthError(null);
+      send({ type: 'signup', username, password, guestId });
+    },
+    login: (username, password) => {
+      setAuthBusy(true);
+      setAuthError(null);
+      send({ type: 'login', username, password });
+    },
+    logout: () => send({ type: 'logout', token: tokenRef.current }),
     findMatch: (mode = 'classic', wager = 0) => send({ type: 'find_match', mode, wager }),
     cancelSearch: () => {
       applySearch(null);
@@ -169,6 +251,23 @@ export function useGameSocket(guestId, nickname) {
       send({ type: 'leave_match' });
     },
   };
+}
+
+function authMessage(msg) {
+  switch (msg.reason) {
+    case 'username_taken':
+      return 'That name is already taken.';
+    case 'bad_username':
+      return '3-20 characters, letters, numbers and underscores only.';
+    case 'weak_password':
+      return 'Password must be at least 8 characters.';
+    case 'locked_out':
+      return `Too many attempts. Try again in ${Math.ceil((msg.retryInSec ?? 60) / 60)} min.`;
+    case 'bad_credentials':
+      return 'Wrong username or password.';
+    default:
+      return "That didn't work. Try again.";
+  }
 }
 
 function purchaseError(reason) {

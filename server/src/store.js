@@ -25,7 +25,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // This must be a DIRECTORY, never a path to the file itself: saveNow() renames
 // a temp file over data.json, and rename() fails with EBUSY across a
 // bind-mounted single file.
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..');
+export const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..');
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
 const TMP_FILE = `${DATA_FILE}.tmp`;
 const BAK_FILE = `${DATA_FILE}.bak`;

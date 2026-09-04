@@ -12,6 +12,7 @@ import * as matchmaking from './matchmaking.js';
 import * as marketData from './marketData.js';
 import { log } from './logger.js';
 import * as store from './store.js';
+import * as accounts from './accounts.js';
 
 const PORT = Number(process.env.PORT) || 8787;
 // Comma-separated list, or "*" (the default) to allow any origin.
@@ -26,8 +27,13 @@ const START_MATCH_COOLDOWN_MS = 750;
 // The VS card and 3/2/1 countdown between "opponent found" and round one.
 // The server owns this so both sides of a PvP match start the same instant.
 const PREMATCH_MS = Number(process.env.PREMATCH_MS) || 3_600;
+// Auth attempts allowed on one connection per minute. The accounts module
+// also locks out a username after repeated failures; this is the other half,
+// stopping one socket from sweeping many usernames.
+const AUTH_ATTEMPTS_PER_MIN = 10;
 
 store.load();
+accounts.load();
 
 // Start pulling real market history in the background. Matches fall back to
 // the synthetic generator until the first batch lands, and whenever the feed
@@ -209,6 +215,36 @@ function releaseMatch(meta) {
   match.destroy();
 }
 
+// Caps how fast one connection may try to authenticate.
+function authAllowed(meta) {
+  const now = Date.now();
+  if (!meta.authWindowStart || now - meta.authWindowStart > 60_000) {
+    meta.authWindowStart = now;
+    meta.authAttempts = 0;
+  }
+  meta.authAttempts += 1;
+  return meta.authAttempts <= AUTH_ATTEMPTS_PER_MIN;
+}
+
+// Seats a connection on a guest id — the one thing every entry path ends in,
+// whether the player arrived as a guest, signed up, logged in, or resumed a
+// saved session. Everything downstream is keyed by guestId and neither knows
+// nor cares whether an account is behind it.
+function attachGuest(ws, meta, guestId, nickname, extra = {}) {
+  store.getOrCreateGuest(guestId, nickname);
+  const bonus = store.applyDailyBonusIfNeeded(guestId);
+  meta.guestId = guestId;
+  socketByGuest.set(guestId, ws);
+  send(ws, {
+    type: 'registered',
+    guestId,
+    dailyBonus: bonus,
+    account: accounts.accountForGuest(guestId),
+    ...extra,
+  });
+  sendLobby(ws, guestId);
+}
+
 function handleMessage(ws, meta, msg) {
   if (msg.type === 'register') {
     const guestId =
@@ -216,14 +252,65 @@ function handleMessage(ws, meta, msg) {
         ? msg.guestId
         : nanoid();
     const nickname = typeof msg.nickname === 'string' ? msg.nickname.slice(0, 20) : undefined;
-    store.getOrCreateGuest(guestId, nickname);
-    const bonus = store.applyDailyBonusIfNeeded(guestId);
-    meta.guestId = guestId;
-    // A reconnect (or a second tab) takes over the mapping so match frames
-    // follow the live socket.
-    socketByGuest.set(guestId, ws);
-    send(ws, { type: 'registered', guestId, dailyBonus: bonus });
-    sendLobby(ws, guestId);
+    // A reconnect (or a second tab) takes over the guest -> socket mapping
+    // so match frames follow the live socket; attachGuest does that.
+    attachGuest(ws, meta, guestId, nickname);
+    return;
+  }
+
+  // --- accounts ---------------------------------------------------------
+  // These are the only other messages allowed before the connection has a
+  // guest id, because they are how a player gets one.
+
+  if (msg.type === 'login') {
+    if (!authAllowed(meta)) return;
+    const result = accounts.login(msg.username, msg.password);
+    if (!result.ok) {
+      send(ws, { type: 'auth', ok: false, action: 'login', ...result });
+      return;
+    }
+    // Logging in moves this connection onto the account's guest id, so the
+    // player picks up the coins and stats they left on another device.
+    attachGuest(ws, meta, result.guestId, undefined, {
+      token: result.token,
+      account: result.username,
+    });
+    send(ws, { type: 'auth', ok: true, action: 'login', username: result.username, token: result.token });
+    return;
+  }
+
+  if (msg.type === 'resume') {
+    const session = accounts.resumeSession(msg.token);
+    if (!session) {
+      // Expired or unknown: tell the client so it can fall back to guest.
+      send(ws, { type: 'auth', ok: false, action: 'resume', reason: 'session_expired' });
+      return;
+    }
+    attachGuest(ws, meta, session.guestId, undefined, { account: session.username });
+    send(ws, { type: 'auth', ok: true, action: 'resume', username: session.username });
+    return;
+  }
+
+  if (msg.type === 'signup') {
+    if (!authAllowed(meta)) return;
+    // Bind whatever guest this connection is already playing as, so the
+    // account inherits their progress instead of starting from zero. A
+    // brand-new visitor gets a fresh id.
+    const guestId =
+      meta.guestId ??
+      (typeof msg.guestId === 'string' && msg.guestId.length >= 8 && msg.guestId.length <= 64
+        ? msg.guestId
+        : nanoid());
+    const result = accounts.signup(msg.username, msg.password, guestId);
+    if (!result.ok) {
+      send(ws, { type: 'auth', ok: false, action: 'signup', ...result });
+      return;
+    }
+    attachGuest(ws, meta, result.guestId, undefined, {
+      token: result.token,
+      account: result.username,
+    });
+    send(ws, { type: 'auth', ok: true, action: 'signup', username: result.username, token: result.token });
     return;
   }
 
@@ -317,6 +404,13 @@ function handleMessage(ws, meta, msg) {
       return;
     }
 
+    case 'logout':
+      // Kills the saved session so the token cannot be reused. The client
+      // then re-registers under its own device guest id.
+      accounts.endSession(msg.token);
+      send(ws, { type: 'auth', ok: true, action: 'logout' });
+      return;
+
     case 'cancel_match':
       abandonSearch(meta, ws);
       send(ws, { type: 'matchmaking', status: 'cancelled', reason: 'you_cancelled' });
@@ -354,6 +448,8 @@ wss.on('connection', (ws) => {
     match: null,
     // Timer for a match that has been announced but not started yet.
     pendingStart: null,
+    authAttempts: 0,
+    authWindowStart: 0,
     tokens: RATE_BURST,
     lastRefill: Date.now(),
     lastStart: 0,
@@ -418,6 +514,7 @@ app.get('/health', (_req, res) => {
     uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     connections: sockets.size,
     marketBatches: marketData.poolSize(),
+    accounts: accounts.accountCount(),
     queued: matchmaking.queueSize(),
     players: store.playerCount(),
   });
@@ -458,6 +555,7 @@ function shutdown(signal) {
   clearInterval(heartbeat);
   // Flush synchronously so an in-flight debounced save is never lost.
   store.saveNow();
+  accounts.saveNow();
   for (const [ws, meta] of sockets) {
     meta.match?.destroy();
     try {
