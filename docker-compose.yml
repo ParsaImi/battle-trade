@@ -1,15 +1,15 @@
 # Battle Trade.
 #
-#   internet -> :${PUBLIC_PORT}  http  -+
-#               :${TLS_PORT}     https -+-> web (nginx) -+-> /    static bundle
-#                                                        +-> /ws  proxy -> server:8787
+#   internet -> :${PUBLIC_PORT}  http  -> redirect (once TLS is trusted)
+#               :${TLS_PORT}     https -> web (nginx) -+-> /    static bundle
+#                                                      +-> /ws  proxy -> server:8787
 #
 # The game server is NOT published to the host; nginx is the only way in.
 #
-# Use HTTPS. Some networks pass the WebSocket handshake and then silently drop
-# the plaintext frames, so the socket connects and immediately goes dead. Under
-# TLS it works. The client follows the page's protocol, so serving over https
-# switches it to wss:// on its own.
+# HTTPS is required, not cosmetic. Some networks pass the WebSocket handshake
+# and then silently drop the plaintext frames, so the socket connects and
+# immediately goes dead. Under TLS it works. The client follows the page's
+# protocol, so serving over https switches it to wss:// on its own.
 
 services:
   server:
@@ -23,7 +23,7 @@ services:
       HOST: "0.0.0.0"
       DATA_DIR: "/app/data"
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-*}"
-      # Seconds a player waits for a real opponent before facing the AI.
+      # How long a player waits for a real opponent before facing the AI.
       MATCH_WAIT_MS: "${MATCH_WAIT_MS:-30000}"
     volumes:
       # Player saves. Without this, every redeploy wipes coins and stats.
@@ -41,20 +41,50 @@ services:
     image: battle-trade-web
     restart: unless-stopped
     environment:
-      # Name on the self-signed fallback certificate. Set this to your domain
-      # once you have one; drop real certs in ./certs and it is ignored.
+      # Hostname the certificate is for, and the name on the self-signed
+      # fallback used until a real one has been issued.
       TLS_HOST: "${TLS_HOST:-localhost}"
+      # Set to 1 once a trusted certificate is in place. Plain http is a dead
+      # end where WebSocket frames are filtered, so send everyone to https.
+      FORCE_HTTPS: "${FORCE_HTTPS:-0}"
     ports:
       - "${PUBLIC_PORT:-80}:80"
       - "${TLS_PORT:-443}:443"
     volumes:
-      # Put fullchain.pem + privkey.pem here to use a real certificate.
-      # Left empty, the entrypoint generates a self-signed one on first boot.
+      # Certificates nginx reads. Certbot writes the real ones here; without
+      # them the entrypoint generates a self-signed pair so the container boots.
       - ./certs:/etc/nginx/certs
+      # Where the Let's Encrypt HTTP-01 challenge files are served from.
+      - ./certbot-webroot:/var/www/certbot
     depends_on:
       server:
         # Wait for /health, so nginx never starts against a missing upstream.
         condition: service_healthy
+
+  certbot:
+    # Renews the certificate and copies it to where nginx reads it. nginx
+    # reloads on its own timer, so nothing needs to coordinate the two.
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    environment:
+      TLS_HOST: "${TLS_HOST:-localhost}"
+    volumes:
+      - ./letsencrypt:/etc/letsencrypt
+      - ./certbot-webroot:/var/www/certbot
+      - ./certs:/certs
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - >
+        trap exit TERM;
+        while :; do
+        certbot renew --webroot -w /var/www/certbot --quiet
+        --deploy-hook "cp -L /etc/letsencrypt/live/$$TLS_HOST/fullchain.pem /certs/fullchain.pem
+        && cp -L /etc/letsencrypt/live/$$TLS_HOST/privkey.pem /certs/privkey.pem";
+        sleep 12h & wait $${!};
+        done
+    depends_on:
+      - web
 
 volumes:
   player-data:
