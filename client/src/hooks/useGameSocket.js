@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8787';
+// Derive the game server from whatever host served the page, so opening the
+// app from a phone at http://192.168.1.8:5173 talks to the server on that
+// same machine — hardcoding "localhost" would point the phone at itself.
+// Set VITE_WS_URL to override (e.g. a deployed backend on another host).
+const WS_PORT = import.meta.env.VITE_WS_PORT || '8787';
+const WS_URL =
+  import.meta.env.VITE_WS_URL ||
+  `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:${WS_PORT}`;
 
 export function useGameSocket(guestId, nickname) {
   const [you, setYou] = useState(null);

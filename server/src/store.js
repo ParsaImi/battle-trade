@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { log } from './logger.js';
+
 import {
   ACHIEVEMENTS,
   AVATAR_IDS,
@@ -17,27 +19,78 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = path.join(__dirname, '..', 'data.json');
+const TMP_FILE = `${DATA_FILE}.tmp`;
+const BAK_FILE = `${DATA_FILE}.bak`;
+const SAVE_DEBOUNCE_MS = 400;
 
 let guests = new Map();
 
+// Reads the live file, falling back to the last known-good backup if the
+// main one is missing or corrupt (e.g. the process died mid-write before
+// saves were made atomic).
 export function load() {
-  try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    const parsed = JSON.parse(raw);
-    guests = new Map(Object.entries(parsed));
-  } catch {
-    guests = new Map();
+  for (const file of [DATA_FILE, BAK_FILE]) {
+    let raw;
+    try {
+      raw = fs.readFileSync(file, 'utf-8');
+    } catch (err) {
+      if (err.code !== 'ENOENT') log.error(`could not read ${path.basename(file)}`, err);
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
+      guests = new Map(Object.entries(parsed));
+      if (file === BAK_FILE) log.warn('main save was unusable — recovered from backup');
+      log.info(`loaded ${guests.size} players`);
+      return;
+    } catch (err) {
+      log.error(`corrupt save in ${path.basename(file)}`, err);
+    }
   }
+  guests = new Map();
+  log.info('starting with an empty player store');
 }
 
 let saveTimer = null;
+
+// Atomic: serialise, write to a temp file, keep the previous file as a
+// backup, then rename over the real one. A crash can never leave a
+// half-written data.json behind.
+export function saveNow() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  let json;
+  try {
+    json = JSON.stringify(Object.fromEntries(guests), null, 2);
+  } catch (err) {
+    log.error('could not serialise player store — skipping save', err);
+    return false;
+  }
+  try {
+    fs.writeFileSync(TMP_FILE, json);
+    try {
+      fs.copyFileSync(DATA_FILE, BAK_FILE);
+    } catch (err) {
+      if (err.code !== 'ENOENT') log.warn('could not refresh backup', err.message);
+    }
+    fs.renameSync(TMP_FILE, DATA_FILE);
+    return true;
+  } catch (err) {
+    log.error('save failed', err);
+    return false;
+  }
+}
+
 export function scheduleSave() {
   if (saveTimer) return;
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    const obj = Object.fromEntries(guests);
-    fs.writeFileSync(DATA_FILE, JSON.stringify(obj, null, 2));
-  }, 1000);
+  saveTimer = setTimeout(saveNow, SAVE_DEBOUNCE_MS);
+}
+
+export function playerCount() {
+  return guests.size;
 }
 
 function currentWeekKey() {
@@ -210,6 +263,17 @@ export function takeWager(guestId, amount) {
   const amt = Number(amount) || 0;
   if (amt <= 0 || g.coins < amt) return false;
   g.coins -= amt;
+  scheduleSave();
+  return true;
+}
+
+// Puts a wager back if the match it was taken for never actually started.
+export function refundWager(guestId, amount) {
+  const g = guests.get(guestId);
+  if (!g) return false;
+  const amt = Number(amount) || 0;
+  if (amt <= 0) return false;
+  g.coins += amt;
   scheduleSave();
   return true;
 }

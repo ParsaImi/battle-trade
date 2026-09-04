@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node test/hardening.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
