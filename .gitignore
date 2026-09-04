@@ -13,9 +13,12 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
-# Runtime player state — this is a live save file, not source.
+# Runtime player state and account credentials — live save files, not source.
 # The server recreates it automatically on first run.
 server/data.json
+server/accounts.json
+server/accounts.json.bak
+server/accounts.json.tmp
 
 # Environment
 .env
