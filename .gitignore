@@ -38,3 +38,4 @@ server/data.json.tmp
 
 # PvP test scratch data
 server/test/.tmp-pvp/
+server/test/.tmp-repro/
