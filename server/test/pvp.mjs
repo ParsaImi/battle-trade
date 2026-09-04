@@ -12,7 +12,10 @@ import fs from 'node:fs';
 import { WebSocket } from 'ws';
 
 const CWD = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const PORT = Number(process.env.PROBE_PORT) || 8913;
+// Fixed ports collide with the previous run's sockets still in TIME_WAIT,
+// which shows up as a failed suite when nothing is wrong. Pick a random high
+// port per run; PROBE_PORT still pins it when you need a known one.
+const PORT = Number(process.env.PROBE_PORT) || 20000 + Math.floor(Math.random() * 20000);
 const DATA_DIR_PATH = path.join(CWD, 'test', '.tmp-pvp');
 const WAIT_MS = 1500;    // stand-in for the real 30s queue wait
 const PREMATCH_MS = 300; // stand-in for the real VS countdown
@@ -479,6 +482,56 @@ async function run() {
   ol = old.frames.filter((f) => f.type === 'lobby').pop();
   ok(ol.you.title === 'The Sniper', 'and they can switch back to one they already own');
   old.close();
+  await sleep(200);
+
+  // --- chart history is context, never the answer ---------------------------
+  // The chart ships extra candles from BEFORE the round so players can scroll
+  // back and see the trend. The thing that must hold is that scrolling back
+  // never scrolls forward: during the guess phase the client must hold exactly
+  // the lead-in plus the 28 visible candles, and not one candle more.
+  const chart = await connect('pvp-chart-000000001', 'Charty');
+  await sleep(250);
+  chart.send({ type: 'find_match', mode: 'blitz' });
+  await waitFor(chart, (f) => f.type === 'matchmaking' && f.status === 'searching', 4000, 'chart searching');
+  chart.send({ type: 'play_ai' });
+  await waitFor(chart, (f) => f.type === 'match', 8000, 'chart match');
+
+  await sleep(6000); // long enough for a Blitz round to resolve
+  const guessFrames = chart.matches.filter((m) => m.phase === 'guess');
+  const revealFrames = chart.matches.filter((m) => m.phase === 'reveal' || m.phase === 'results');
+  ok(guessFrames.length > 0 && revealFrames.length > 0,
+     'saw both phases (guess=' + guessFrames.length + ', reveal=' + revealFrames.length + ')');
+
+  // Pair them by round: Blitz turns rounds over every few seconds, so the
+  // newest guess frame and the newest reveal frame are usually different
+  // charts, and comparing those compares nothing.
+  const pairedRound = revealFrames
+    .map((m) => m.round)
+    .find((n) => guessFrames.some((m) => m.round === n));
+  ok(pairedRound !== undefined, 'captured a guess and a reveal from the same round (round ' + pairedRound + ')');
+  const gFrame = guessFrames.filter((m) => m.round === pairedRound).pop();
+  ok(typeof gFrame.historyCount === 'number' && gFrame.historyCount > 0,
+     'the guess phase ships lead-in history (' + gFrame.historyCount + ' candles)');
+  ok(gFrame.candles.length === gFrame.historyCount + 28,
+     'and exactly history + 28 candles, so nothing past the split is sent (' + gFrame.candles.length + ')');
+
+  const rFrame = revealFrames.filter((m) => m.round === pairedRound).pop();
+  ok(rFrame.candles.length === rFrame.historyCount + 40,
+     'the reveal adds the remaining 12 and no more (' + rFrame.candles.length + ')');
+
+  // The history must be identical across phases — it is context, not a moving
+  // window that could smuggle the answer in.
+  ok(
+    JSON.stringify(gFrame.candles.slice(0, gFrame.historyCount)) ===
+      JSON.stringify(rFrame.candles.slice(0, rFrame.historyCount)),
+    'the lead-in is unchanged between the guess and the reveal',
+  );
+  // And the candles a player was already shown do not change under them.
+  ok(
+    JSON.stringify(gFrame.candles) === JSON.stringify(rFrame.candles.slice(0, gFrame.candles.length)),
+    'the revealed chart extends the guess-phase chart rather than replacing it',
+  );
+  chart.close();
   await sleep(200);
 
   await sleep(200);

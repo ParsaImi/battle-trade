@@ -326,6 +326,7 @@ export default function MatchView({
             roundId={match.round}
             direction={match.roundOutcome?.direction}
             chartMeta={match.chartMeta}
+            historyCount={match.historyCount ?? 0}
           />
           <MarketChatter triggerKey={chatter?.key} direction={chatter?.direction} big={chatter?.big} />
         </div>

@@ -173,25 +173,35 @@ function isPlayable(slice, visibleCount) {
  * separately from the candles so the caller can withhold it until the round is
  * over — publishing it during the guess phase would hand players the answer.
  */
-export function getWindow(count, visibleCount) {
+export function getWindow(count, visibleCount, historyCount = 0) {
   if (pool.length === 0) return null;
 
   for (let attempt = 0; attempt < 25; attempt++) {
     const batch = pool[Math.floor(Math.random() * pool.length)];
     if (batch.candles.length < count + 1) continue;
 
-    const offset = Math.floor(Math.random() * (batch.candles.length - count));
+    // Prefer a start with room for the full lead-in behind it, so players can
+    // scroll back and see the trend the round sits in.
+    const room = batch.candles.length - count;
+    const lo = Math.min(historyCount, Math.max(0, room - 1));
+    const offset = lo + Math.floor(Math.random() * Math.max(1, room - lo));
     const slice = batch.candles.slice(offset, offset + count);
     if (!isPlayable(slice, visibleCount)) continue;
 
+    // Context BEFORE the round. Safe to send during the guess phase: it is
+    // what already happened leading up to the chart, not what happens next.
+    const history = batch.candles.slice(Math.max(0, offset - historyCount), offset);
+
     const dp = precisionFor(slice[slice.length - 1].close);
+    const shape = (c) => ({
+      open: roundTo(c.open, dp),
+      high: roundTo(c.high, dp),
+      low: roundTo(c.low, dp),
+      close: roundTo(c.close, dp),
+    });
     return {
-      candles: slice.map((c) => ({
-        open: roundTo(c.open, dp),
-        high: roundTo(c.high, dp),
-        low: roundTo(c.low, dp),
-        close: roundTo(c.close, dp),
-      })),
+      candles: slice.map(shape),
+      history: history.map(shape),
       meta: {
         real: true,
         label: batch.instrument.label,

@@ -11,7 +11,10 @@ import fs from 'node:fs';
 import { WebSocket } from 'ws';
 
 const CWD = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const PORT = Number(process.env.PROBE_PORT) || 8917;
+// Fixed ports collide with the previous run's sockets still in TIME_WAIT,
+// which shows up as a failed suite when nothing is wrong. Pick a random high
+// port per run; PROBE_PORT still pins it when you need a known one.
+const PORT = Number(process.env.PROBE_PORT) || 20000 + Math.floor(Math.random() * 20000);
 const DATA = path.join(CWD, 'test', '.tmp-auth');
 
 let pass = 0;

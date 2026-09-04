@@ -135,6 +135,10 @@ export class Match {
     // at exactly the same candles.
     const round = generateRound();
     this.candles = round.candles;
+    // Context before the round. Never scored — resolveDirection and
+    // splitChart only ever see this.candles — but sent to the client so the
+    // chart can be scrolled back.
+    this.history = round.history ?? [];
     // Which instrument and date this window came from. Withheld until the
     // round resolves: naming it during the guess phase would let a player
     // look up what the price actually did next.
@@ -512,7 +516,10 @@ export class Match {
       stagesTotal: m.stages?.length ?? 0,
       stagePlayerScore: myStage,
       stageBotScore: theirStage,
-      candles: this.phase === PHASES.GUESS ? this.visible : this.candles,
+      candles: [...this.history, ...(this.phase === PHASES.GUESS ? this.visible : this.candles)],
+      // Where the round proper starts inside `candles`, so the client knows
+      // which part is context and where the guess/reveal split falls.
+      historyCount: this.history.length,
       // Only ever sent once the calls are locked in and the chart is revealed.
       chartMeta: this.phase === PHASES.GUESS ? null : this.chartMeta,
       roundOutcome,

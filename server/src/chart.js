@@ -12,17 +12,21 @@ import * as market from './marketData.js';
 const CANDLE_COUNT = 40;
 const VISIBLE_COUNT = 28; // shown during the guess phase; rest is the "reveal"
 const START_PRICE = 100;
+// Candles of context sent BEFORE the round, so a player can scroll back and
+// see the trend this window sits in. Safe during the guess phase: it is what
+// already happened leading up to the chart, never what happens after it.
+const HISTORY_COUNT = 60;
 
 function randRange(min, max) {
   return min + Math.random() * (max - min);
 }
 
 // Fallback only. Kept because the game must survive a feed outage.
-export function generateSyntheticChart() {
+export function generateSyntheticChart(count = CANDLE_COUNT) {
   const candles = [];
   let price = START_PRICE;
 
-  for (let i = 0; i < CANDLE_COUNT; i++) {
+  for (let i = 0; i < count; i++) {
     const open = price;
     // small drift + noise keeps the walk from looking too smooth or too wild
     const drift = randRange(-1.2, 1.3);
@@ -53,9 +57,17 @@ export function generateSyntheticChart() {
  * round has resolved.
  */
 export function generateRound() {
-  const real = market.getWindow(CANDLE_COUNT, VISIBLE_COUNT);
+  const real = market.getWindow(CANDLE_COUNT, VISIBLE_COUNT, HISTORY_COUNT);
   if (real) return real;
-  return { candles: generateSyntheticChart(), meta: { real: false } };
+
+  // One continuous walk, then split, so the fallback's lead-in joins onto the
+  // round instead of jumping at the seam.
+  const walk = generateSyntheticChart(HISTORY_COUNT + CANDLE_COUNT);
+  return {
+    candles: walk.slice(HISTORY_COUNT),
+    history: walk.slice(0, HISTORY_COUNT),
+    meta: { real: false },
+  };
 }
 
 // Back-compat for callers that only want candles (tests, older code paths).
@@ -82,4 +94,4 @@ export function resolveDirection(candles) {
   return 'flat';
 }
 
-export const CHART_CONSTANTS = { CANDLE_COUNT, VISIBLE_COUNT };
+export const CHART_CONSTANTS = { CANDLE_COUNT, VISIBLE_COUNT, HISTORY_COUNT };

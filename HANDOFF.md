@@ -106,6 +106,12 @@ resolve in 10s. Two rules:
 
 - **Only the server talks to the exchange.** The client never does, so a player's network or
   location is irrelevant. (The owner's machine cannot reach Binance at all — it geo-blocks Iran.)
+- **Lead-in history.** Each round also ships `HISTORY_COUNT` (60) candles from BEFORE the
+  window, sent as the first entries of `candles` with `historyCount` marking where the round
+  proper starts. This is what makes the chart worth zooming out of. It is safe: past context
+  cannot reveal the future. **The invariant to protect** is that the guess phase sends exactly
+  `historyCount + 28` candles and the reveal extends it to `historyCount + 40` — scrolling back
+  must never become scrolling forward. There is a test for this in `test/pvp.mjs`.
 - **The instrument and date are withheld until the round resolves.** `publicState()` sends
   `chartMeta: null` while phase is `guess`; naming it earlier would hand over the answer.
 
@@ -370,6 +376,12 @@ The guest id lives in `localStorage`, which is per-origin — so two tabs on `lo
 the *same player*, and the queue refuses to pair a player with itself. To test PvP locally, open
 one tab on `http://localhost:5173` and the other on `http://127.0.0.1:5173`: different origins,
 separate storage, two real players.
+
+**An element with a `backdrop-filter` clips its descendants.**
+The title dropdown was cut off halfway down the list and no `overflow` rule was involved:
+`.player-hero` carries a `backdrop-filter` for the glass effect, and that confines descendant
+painting to the element box even when `overflow: visible`. Anything that must escape a glass
+panel — a dropdown, a popover, a tooltip — has to be a modal, not an absolutely-positioned child.
 
 **Automated UI testing races real game timers.**
 Tool round-trips often exceed a 10s guess phase, so matches finished between calls. Drive the game
