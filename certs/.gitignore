@@ -1,0 +1,3 @@
+# Certificates are deployment secrets / generated — never commit them.
+*
+!.gitignore

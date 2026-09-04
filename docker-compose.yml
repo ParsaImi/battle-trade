@@ -1,9 +1,15 @@
-# Battle Trade — single public port.
+# Battle Trade.
 #
-#   internet -> :${PUBLIC_PORT} -> web (nginx) -+-> /     static React bundle
-#                                               +-> /ws   proxied to server:8787
+#   internet -> :${PUBLIC_PORT}  http  -+
+#               :${TLS_PORT}     https -+-> web (nginx) -+-> /    static bundle
+#                                                        +-> /ws  proxy -> server:8787
 #
 # The game server is NOT published to the host; nginx is the only way in.
+#
+# Use HTTPS. Some networks pass the WebSocket handshake and then silently drop
+# the plaintext frames, so the socket connects and immediately goes dead. Under
+# TLS it works. The client follows the page's protocol, so serving over https
+# switches it to wss:// on its own.
 
 services:
   server:
@@ -17,6 +23,8 @@ services:
       HOST: "0.0.0.0"
       DATA_DIR: "/app/data"
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-*}"
+      # Seconds a player waits for a real opponent before facing the AI.
+      MATCH_WAIT_MS: "${MATCH_WAIT_MS:-30000}"
     volumes:
       # Player saves. Without this, every redeploy wipes coins and stats.
       - player-data:/app/data
@@ -32,8 +40,17 @@ services:
         VITE_WS_URL: "${VITE_WS_URL:-}"
     image: battle-trade-web
     restart: unless-stopped
+    environment:
+      # Name on the self-signed fallback certificate. Set this to your domain
+      # once you have one; drop real certs in ./certs and it is ignored.
+      TLS_HOST: "${TLS_HOST:-localhost}"
     ports:
       - "${PUBLIC_PORT:-80}:80"
+      - "${TLS_PORT:-443}:443"
+    volumes:
+      # Put fullchain.pem + privkey.pem here to use a real certificate.
+      # Left empty, the entrypoint generates a self-signed one on first boot.
+      - ./certs:/etc/nginx/certs
     depends_on:
       server:
         # Wait for /health, so nginx never starts against a missing upstream.

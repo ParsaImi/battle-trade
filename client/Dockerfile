@@ -16,6 +16,16 @@ RUN npm run build
 
 # --- stage 2: serve it, and proxy the WebSocket ---------------------------
 FROM nginx:alpine
+
+# openssl is only needed for the self-signed fallback certificate.
+RUN apk add --no-cache openssl
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY app-locations.conf /etc/nginx/app-locations.conf
+COPY docker-entrypoint.sh /docker-entrypoint-tls.sh
+RUN chmod +x /docker-entrypoint-tls.sh
 COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
+
+EXPOSE 80 443
+ENTRYPOINT ["/docker-entrypoint-tls.sh"]
+CMD ["nginx", "-g", "daemon off;"]
