@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Leaderboard from './Leaderboard';
 import SettingsModal from './SettingsModal';
+import AvatarPickerModal from './AvatarPickerModal';
 import HowToPlayModal from './HowToPlayModal';
 import ShopModal from './ShopModal';
 import QuestsModal from './QuestsModal';
@@ -12,7 +13,6 @@ import { MODE_BY_ID } from './gameModes';
 import { useOnlinePlayers } from '../hooks/useOnlinePlayers';
 import { useMuted } from '../hooks/useMuted';
 import Avatar from './Avatar';
-import { AVATAR_LIST } from './avatars';
 import { TITLES } from './titles';
 import { startAmbient, stopAmbient } from '../lib/sound';
 
@@ -77,7 +77,6 @@ export default function Lobby({
 
   const crowd = leaderboard.slice(0, 6);
   const crowdExtra = Math.max(0, online - crowd.length);
-  const ownedAvatars = you?.unlockedAvatars?.length ? you.unlockedAvatars : AVATAR_LIST;
   const claimable = (quests ?? []).filter((q) => q.complete && !q.claimed).length;
   const level = you?.level ?? levelFor(you?.coins);
   const activeMode = MODE_BY_ID[selectedMode] ?? MODE_BY_ID.classic;
@@ -110,45 +109,27 @@ export default function Lobby({
         </div>
 
         <section className="player-hero">
+          {/* The portrait itself is the control — tapping your own face to
+              change it is the thing people try first. The pencil stays as a
+              visible affordance and opens the same picker. */}
           <div className="avatar-block">
-            <div className="avatar-circle"><Avatar id={avatar} /></div>
+            <button
+              type="button"
+              className="avatar-circle avatar-circle-btn"
+              onClick={() => setPickerOpen(true)}
+              aria-label="Change avatar"
+            >
+              <Avatar id={avatar} />
+            </button>
             <button
               type="button"
               className="avatar-edit"
-              onClick={() => setPickerOpen((v) => !v)}
-              aria-label="Change avatar"
+              onClick={() => setPickerOpen(true)}
+              aria-hidden="true"
+              tabIndex={-1}
             >
               ✎
             </button>
-
-            {pickerOpen && (
-              <div className="avatar-picker">
-                {ownedAvatars.map((a) => (
-                  <button
-                    type="button"
-                    key={a}
-                    className={`avatar-option ${a === avatar ? 'selected' : ''}`}
-                    onClick={() => {
-                      onSetAvatar(a);
-                      setPickerOpen(false);
-                    }}
-                  >
-                    <Avatar id={a} />
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="avatar-option avatar-shop-link"
-                  title="More in the shop"
-                  onClick={() => {
-                    setPickerOpen(false);
-                    setShopOpen(true);
-                  }}
-                >
-                  +
-                </button>
-              </div>
-            )}
           </div>
 
           <h2 className="lobby-name">{you?.nickname}</h2>
@@ -309,6 +290,17 @@ export default function Lobby({
             localStorage.setItem('battle-trade:seenRules', '1');
             setRulesOpen(false);
           }}
+        />
+      )}
+      {pickerOpen && (
+        <AvatarPickerModal
+          you={you}
+          onSelect={onSetAvatar}
+          onOpenShop={() => {
+            setPickerOpen(false);
+            setShopOpen(true);
+          }}
+          onClose={() => setPickerOpen(false)}
         />
       )}
       {shopOpen && (

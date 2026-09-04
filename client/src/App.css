@@ -609,6 +609,9 @@ h3 {
 
 .avatar-edit {
   position: absolute;
+  /* .avatar-circle sets z-index 1, so without this the badge sits behind the
+     portrait and only a sliver of it is visible. */
+  z-index: 2;
   bottom: -2px;
   right: -2px;
   width: 30px;
@@ -624,38 +627,8 @@ h3 {
   justify-content: center;
 }
 
-.avatar-picker {
-  position: absolute;
-  top: 108px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 8px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 8px;
-  z-index: 5;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-}
 
-.avatar-option {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  border: 1px solid var(--glass-border-top);
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
-  font-size: 22px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
-.avatar-option.selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
-}
 
 .lobby-name {
   margin: 0 0 10px;
@@ -2169,11 +2142,6 @@ button.id-badge-title {
   }
 }
 
-.avatar-shop-link {
-  color: var(--accent);
-  font-size: 20px;
-  font-weight: 700;
-}
 
 /* ---------- Shop ---------- */
 
@@ -3094,7 +3062,6 @@ button.id-badge-title {
 .profile-avatar,
 .mm-avatar,
 .crowd-avatar,
-.avatar-option,
 .shop-emoji,
 .lb-avatar {
   overflow: hidden;
@@ -3115,13 +3082,7 @@ button.id-badge-title {
   border-radius: 12px;
 }
 
-.avatar-option {
-  padding: 0;
-}
 
-.avatar-option .avatar-img {
-  border-radius: 12px;
-}
 
 /* Locked shop items read as silhouettes until bought. */
 .shop-emoji.locked .avatar-img {
@@ -3421,4 +3382,124 @@ button.id-badge-title {
   background: transparent;
   border: 1px solid var(--glass-border-top);
   color: var(--text-dim);
+}
+
+/* ==========================================================================
+   Avatar picker
+   The portrait is now the control, and choosing happens in a modal instead of
+   a popover that used to land on top of the player's name.
+   ========================================================================== */
+
+/* .avatar-circle already sizes and shapes this; these reset the button
+   chrome the browser adds and make it read as tappable. */
+.avatar-circle-btn {
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.avatar-circle-btn:hover,
+.avatar-circle-btn:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(139, 92, 255, 0.25);
+  transform: scale(1.03);
+}
+
+.avatar-circle-btn:active {
+  transform: scale(0.97);
+}
+
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 4px 0 18px;
+  /* Nine avatars is taller than a phone; let the grid scroll inside the modal
+     rather than pushing the buttons off the bottom of the screen. */
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.avatar-grid-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 6px 8px;
+  border-radius: 16px;
+  border: 1px solid var(--glass-border-top);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 120ms ease;
+}
+
+.avatar-grid-item:hover,
+.avatar-grid-item:focus-visible {
+  border-color: var(--accent);
+}
+
+.avatar-grid-item:active {
+  transform: scale(0.97);
+}
+
+.avatar-grid-item.current {
+  border-color: var(--up);
+  background: color-mix(in srgb, var(--up) 14%, transparent);
+}
+
+.avatar-grid-face {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  overflow: hidden;
+  line-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-2, rgba(255, 255, 255, 0.04));
+}
+
+/* Locked avatars stay recognisable but clearly not yours yet. */
+.avatar-grid-item.locked .avatar-grid-face {
+  filter: grayscale(1) brightness(0.62);
+}
+
+.avatar-grid-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.avatar-grid-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.avatar-grid-tag.equipped {
+  color: var(--up);
+  font-weight: 700;
+}
+
+.avatar-grid-tag.price.affordable {
+  color: var(--accent-2, #4dd8ff);
+  font-weight: 600;
+}
+
+@media (max-width: 460px) {
+  .avatar-grid {
+    gap: 8px;
+    max-height: 44vh;
+  }
+
+  .avatar-grid-face {
+    width: 48px;
+    height: 48px;
+  }
 }

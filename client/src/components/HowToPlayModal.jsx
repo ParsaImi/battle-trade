@@ -8,7 +8,7 @@ export default function HowToPlayModal({ onClose }) {
         <li>
           Hit <strong>Play</strong> to jump into a 1v1.
         </li>
-        <li>Each round shows a fake chart, cut off early.</li>
+        <li>Each round replays a real chart from the past, cut off early.</li>
         <li>
           Guess <strong>Up</strong> or <strong>Down</strong> before the timer runs out — right is +1, wrong is −1.
         </li>
@@ -22,7 +22,7 @@ export default function HowToPlayModal({ onClose }) {
           <kbd className="key-hint">space</kbd> Hold.
         </li>
         <li>Spend coins in the shop, finish daily quests, climb the weekly leaderboard.</li>
-        <li>It's all fake charts and fake coins. Just for fun.</li>
+        <li>Real charts, worthless coins, no real money. Just for fun — nothing here is advice.</li>
       </ul>
       <div className="modal-actions">
         <button type="button" className="secondary" onClick={onClose}>
