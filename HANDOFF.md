@@ -127,12 +127,24 @@ The opponent always calls Up/Down (never Hold) at its mode's accuracy.
 | Mode | Structure | Opponent | Payout |
 |---|---|---|---|
 | **Classic 1v1** ⚔️ | Min 3 rounds, then **win by 2** (volleyball rule), cap 11 | **a real player**, else 50% AI | 80–120 × streak multiplier |
-| **Survival** 💀 | Endless, sudden death. **Hold disabled.** Timeout = death | none (solo) | escalating: `10 + 5n` per round survived |
-| **Blitz** ⚡ | 60-second session clock, 4s per round | none (solo) | 25 × net points |
-| **High Stakes** 🎰 | Like Classic; wager 100/250/500/1000 up front | **58%** | win = 2× wager, draw = refund, loss = 0 |
-| **Gauntlet** 🏆 | 3 stages × 3 rounds, must lead to advance | Rookie 50% → Pro 62% → Legend 72% | 200/stage + 1200 clear bonus |
+| **Survival** 💀 | Endless, sudden death. **Hold disabled.** Timeout = death | **a real player**, else solo | escalating: `10 + 5n` per round survived |
+| **Blitz** ⚡ | 60-second session clock, 4s per round | **a real player**, else solo | 25 × net points |
+| **High Stakes** 🎰 | Like Classic; wager 100/250/500/1000 up front | **a real player**, else 58% AI | win = 2× wager, draw = refund, loss = 0 |
+| **Gauntlet** 🏆 | 3 stages × 3 rounds, must lead to advance | **a real player**, else Rookie 50% → Pro 62% → Legend 72% | 200/stage + 1200 clear bonus |
 
 Solo modes do **not** affect the win streak.
+
+**Every mode now queues for a real opponent first** (`pvp: true` on all five), falling back after
+`MATCH_WAIT_MS` to whatever that mode does alone — an AI rival for Classic/Stakes/Gauntlet, a solo
+run for Survival/Blitz. Head to head:
+
+- **Survival** is a race on identical charts. Each seat dies independently and rounds keep coming
+  until *both* are out; longest run wins, and each player is paid for their own run.
+- **Blitz** shares one 60s clock and the same charts; higher net score wins, each paid on their own.
+- **High Stakes** is genuinely zero-sum: both stake, and the winner's 2× payout is exactly the two
+  stakes. The queue keys on wager, so 100-coin players never meet 1000-coin ones.
+- **Gauntlet** keeps the 3×3 stage ladder, but the rival is a person; losing a stage eliminates you
+  and hands that stage to them.
 
 ### Economy
 - Daily login bonus: **50** coins

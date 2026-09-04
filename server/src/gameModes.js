@@ -23,9 +23,6 @@ export const MODES = {
     resultsMs: 2_600,
     botAccuracy: 0.5,
     affectsStreak: true,
-    // The one mode that looks for a real opponent first. Gauntlet is a
-    // scripted AI ladder by design, Survival and Blitz are solo, and High
-    // Stakes would need a zero-sum wager rule before it can be PvP.
     pvp: true,
   },
 
@@ -37,6 +34,9 @@ export const MODES = {
     solo: true,
     suddenDeath: true,
     holdAllowed: false,
+    // Head-to-head it becomes a race on identical charts: rounds keep coming
+    // until BOTH players are out, and the one who lasted longer takes it.
+    pvp: true,
     maxRounds: 50,
     guessMs: 8_000,
     revealMs: 2_000,
@@ -55,6 +55,9 @@ export const MODES = {
     solo: true,
     totalTimeMs: 60_000,
     maxRounds: 40,
+    // Head-to-head: one shared 60-second clock, the same charts for both, and
+    // the higher net score wins.
+    pvp: true,
     guessMs: 4_000,
     revealMs: 1_100,
     resultsMs: 700,
@@ -76,6 +79,10 @@ export const MODES = {
     resultsMs: 2_400,
     botAccuracy: 0.58, // sharper opponent to justify the payout
     affectsStreak: true,
+    // Against a real player this is genuinely zero-sum: both stake, and the
+    // winner's 2x payout is exactly the two stakes. The queue keys on wager,
+    // so a 100-coin player is never matched against a 1000-coin one.
+    pvp: true,
     wager: true,
     wagerOptions: [100, 250, 500, 1000],
   },
@@ -92,6 +99,9 @@ export const MODES = {
       { name: 'Legend', botAccuracy: 0.72 },
     ],
     roundsPerStage: 3,
+    // Against a real player the stage structure holds — three stages, lead to
+    // advance — but the rival is a person rather than the scripted ladder.
+    pvp: true,
     guessMs: 9_000,
     revealMs: 2_400,
     resultsMs: 2_400,

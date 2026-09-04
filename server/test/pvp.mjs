@@ -242,16 +242,96 @@ async function run() {
   live.close();
   await sleep(200);
 
-  // --- solo modes never queue -----------------------------------------------
+  // --- every mode looks for a human first -----------------------------------
+  // Survival and Blitz used to start instantly against nobody. They now queue
+  // like the rest, and only fall back to a solo run when no one turns up.
   const e = await connect('pvp-blitz-0000000001', 'Blitzer');
   await sleep(200);
   const beforeBlitz = Date.now();
   e.send({ type: 'find_match', mode: 'blitz' });
+  await waitFor(e, (f) => f.type === 'matchmaking' && f.status === 'searching', 4000, 'blitz searching');
+  ok(true, 'a solo mode now queues for a real opponent too');
+
   const eFound = await waitFor(
-    e, (f) => f.type === 'matchmaking' && f.status === 'found', 4000, 'blitz found');
-  ok(Date.now() - beforeBlitz < WAIT_MS, 'a solo mode starts immediately instead of queueing');
-  ok(eFound.opponent === null, 'a solo mode announces no opponent');
+    e, (f) => f.type === 'matchmaking' && f.status === 'found', WAIT_MS + 6000, 'blitz found');
+  ok(Date.now() - beforeBlitz >= WAIT_MS - 250, 'it waits the full queue time before giving up');
+  ok(eFound.opponent === null && eFound.pvp === false, 'alone, a solo mode still runs solo with no opponent');
   e.close();
+  await sleep(300);
+
+  // --- two players in a solo mode race each other ---------------------------
+  const r1 = await connect('pvp-race-000000001', 'RacerOne');
+  const r2 = await connect('pvp-race-000000002', 'RacerTwo');
+  await sleep(300);
+  r1.send({ type: 'find_match', mode: 'blitz' });
+  await sleep(250);
+  r2.send({ type: 'find_match', mode: 'blitz' });
+
+  const rf1 = await waitFor(r1, (f) => f.type === 'matchmaking' && f.status === 'found', 8000, 'race found 1');
+  const rf2 = await waitFor(r2, (f) => f.type === 'matchmaking' && f.status === 'found', 8000, 'race found 2');
+  ok(rf1.pvp === true && rf2.pvp === true, 'two players in Blitz are matched against each other');
+  ok(rf1.opponent?.nickname === 'RacerTwo', 'a solo mode now names a real opponent');
+
+  const rm1 = await waitFor(r1, (f) => f.type === 'match', 8000, 'race match 1');
+  const rm2 = await waitFor(r2, (f) => f.type === 'match', 8000, 'race match 2');
+  ok(rm1.match.solo === false, 'a contested Blitz no longer reports itself as solo');
+  ok(
+    JSON.stringify(rm1.match.candles) === JSON.stringify(rm2.match.candles),
+    'both racers get identical charts, so the race is fair',
+  );
+  ok(rm1.match.opponent?.nickname === 'RacerTwo', 'each racer sees the other as their opponent');
+  r1.close();
+  r2.close();
+  await sleep(300);
+
+  // --- Survival head to head: the two runs end independently ----------------
+  // The dangerous part of this mode is that each player dies on their own and
+  // the match has to keep running until BOTH are out. One player here never
+  // answers, which is a guaranteed death by timeout on round one, while the
+  // other keeps calling.
+  const s1 = await connect('pvp-surv-000000001', 'Runner');
+  const s2 = await connect('pvp-surv-000000002', 'Quitter');
+  await sleep(300);
+  s1.send({ type: 'find_match', mode: 'survival' });
+  await sleep(250);
+  s2.send({ type: 'find_match', mode: 'survival' });
+
+  const sf1 = await waitFor(s1, (f) => f.type === 'matchmaking' && f.status === 'found', 8000, 'surv found');
+  ok(sf1.pvp === true, 'Survival matches two real players against each other');
+
+  const runner = setInterval(() => {
+    const m = s1.matches[s1.matches.length - 1];
+    if (m && m.phase === 'guess' && !m.yourGuess && !m.youAreOut) {
+      s1.send({ type: 'match_guess', direction: 'up' });
+    }
+  }, 200);
+
+  const done1 = await waitFor(
+    s1, (f) => f.type === 'match' && f.match.phase === 'complete', 90000, 'surv complete 1');
+  const done2 = await waitFor(
+    s2, (f) => f.type === 'match' && f.match.phase === 'complete', 90000, 'surv complete 2');
+  clearInterval(runner);
+
+  const q = done2.match.matchResult;
+  const r = done1.match.matchResult;
+  ok(q.survivalScore === 0, 'the player who never answered survived 0 rounds (got ' + q.survivalScore + ')');
+  ok(q.endReason === 'timeout', 'and the result says why: ' + q.endReason);
+
+  const expected =
+    r.survivalScore > q.survivalScore ? 'win' : r.survivalScore < q.survivalScore ? 'loss' : 'draw';
+  ok(r.outcome === expected,
+     'outcome follows who lasted longer (' + r.survivalScore + ' vs ' + q.survivalScore + ' -> ' + r.outcome + ')');
+  ok(
+    (r.outcome === 'win' && q.outcome === 'loss') || (r.outcome === 'draw' && q.outcome === 'draw'),
+    'the two results agree (' + r.outcome + ' / ' + q.outcome + ')',
+  );
+  // Each keeps what their OWN run earned, not one mirrored number.
+  ok(q.delta === 0, 'a 0-round run pays nothing (' + q.delta + ')');
+  ok(r.survivalScore === 0 || r.delta > 0, 'the surviving run is paid for itself (' + r.delta + ' coins)');
+  console.log('      Runner ' + r.survivalScore + ' rounds / ' + r.delta + ' coins, Quitter ' +
+    q.survivalScore + ' rounds / ' + q.delta + ' coins');
+  s1.close();
+  s2.close();
 
   await sleep(200);
   console.log(`\n${pass} passed, ${fail} failed`);

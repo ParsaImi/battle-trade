@@ -49,8 +49,10 @@ export class Match {
     this.playerIdentity = opponentFromProfile(getGuestPublic(guestId));
     // A caller that already announced an opponent (the matchmaking "found"
     // card) passes it in, so the identity shown there is the identity played
-    // against — bot or human alike.
-    this.opponent = this.mode.solo ? null : (options.opponent ?? makeBotOpponent());
+    // against — bot or human alike. Survival and Blitz have no AI rival, but
+    // they DO have a human one when two players are matched, so an opponent
+    // passed in always wins over the mode's solo default.
+    this.opponent = options.opponent ?? (this.mode.solo ? null : makeBotOpponent());
     this.isPvp = !!(this.opponent && !this.opponent.isBot);
     // Both sides stake the same amount in a wagered PvP match.
     this.opponentWager = this.isPvp ? this.wager : 0;
@@ -68,8 +70,13 @@ export class Match {
     // completion screen they just chose to leave.
     this.mutedViewers = new Set();
 
-    // Survival: how many rounds called correctly before dying.
+    // Survival: how many rounds called correctly before dying. Tracked per
+    // seat, because head-to-head the two players die independently and the
+    // match runs until BOTH are out.
     this.survivalScore = 0;
+    this.oppSurvivalScore = 0;
+    this.oppDead = false;
+    this.oppEndReason = null;
     // Blitz: whole-session clock.
     this.deadline = this.mode.totalTimeMs ? Date.now() + this.mode.totalTimeMs : null;
     // Gauntlet: which rival we're on, and the per-stage scoreline.
@@ -78,6 +85,7 @@ export class Match {
     this.stagePlayerScore = 0;
     this.stageBotScore = 0;
     this.stagesCleared = 0;
+    this.oppStagesCleared = 0;
 
     // Skip the onChange callback for this first phase — it would fire
     // synchronously here, before the caller's `new Match(...)` assignment
@@ -92,6 +100,18 @@ export class Match {
   // Every guestId seated in this match, for the caller to broadcast to.
   get participants() {
     return this.isPvp ? [this.guestId, this.opponent.guestId] : [this.guestId];
+  }
+
+  // Solo modes have no AI rival, but they do have a human one in PvP.
+  get hasOpponent() {
+    return !this.mode.solo || this.isPvp;
+  }
+
+  // A seat that is out of a Survival run cannot answer, so the round must not
+  // sit waiting for a call that will never come.
+  _seatAnswered(seat) {
+    if (seat === 'player') return !!this.playerGuess || (this.mode.suddenDeath && this.dead);
+    return !!this.botGuess || (this.mode.suddenDeath && this.oppDead);
   }
 
   _seatFor(guestId) {
@@ -159,8 +179,10 @@ export class Match {
   _shouldPlayAnotherRound() {
     if (this.round >= (this.mode.maxRounds ?? 11)) return false;
 
-    // Survival: a wrong call (or a timeout) ends the run immediately.
-    if (this.mode.suddenDeath) return !this.dead;
+    // Survival: a wrong call (or a timeout) ends the run immediately. Head to
+    // head, rounds keep coming until BOTH players are out, so the one still
+    // standing can keep extending their lead.
+    if (this.mode.suddenDeath) return this.isPvp ? !(this.dead && this.oppDead) : !this.dead;
 
     // Blitz: keep going until the session clock runs out.
     if (this.deadline) return Date.now() < this.deadline - 800;
@@ -189,7 +211,7 @@ export class Match {
     const playerDelta = this._deltaFor(this.playerGuess, direction);
 
     let botDelta = 0;
-    if (!this.mode.solo) {
+    if (this.hasOpponent) {
       // In PvP the other seat's call is already in (or they ran out of time and
       // it stays null); only the AI needs one generated here.
       if (!this.isPvp) this.botGuess = botGuessFor(direction, this.botAccuracy);
@@ -202,12 +224,24 @@ export class Match {
     this.stagePlayerScore += playerDelta;
 
     if (this.mode.suddenDeath) {
-      if (playerDelta > 0) {
-        this.survivalScore += 1;
-      } else {
-        // A wrong call ends the run; so does letting the clock run out.
-        this.dead = true;
-        this.endReason = this.playerGuess ? 'wrong_call' : 'timeout';
+      // Each seat has its own run. Someone already out just watches; without
+      // the guard their empty call would "kill" them again every round.
+      if (!this.dead) {
+        if (playerDelta > 0) {
+          this.survivalScore += 1;
+        } else {
+          // A wrong call ends the run; so does letting the clock run out.
+          this.dead = true;
+          this.endReason = this.playerGuess ? 'wrong_call' : 'timeout';
+        }
+      }
+      if (this.isPvp && !this.oppDead) {
+        if (botDelta > 0) {
+          this.oppSurvivalScore += 1;
+        } else {
+          this.oppDead = true;
+          this.oppEndReason = this.botGuess ? 'wrong_call' : 'timeout';
+        }
       }
     }
 
@@ -236,6 +270,9 @@ export class Match {
       this.stagesCleared += 1;
       this.stageIndex = Math.min(this.stageIndex + 1, this.mode.stages.length - 1);
     } else {
+      // Losing a stage is elimination either way; against a person it is also
+      // the moment they take the stage.
+      if (this.isPvp) this.oppStagesCleared += 1;
       this.eliminated = true;
       this.endReason = 'eliminated';
     }
@@ -256,30 +293,59 @@ export class Match {
     this._completeMatch({ forfeitedBy: seat });
   }
 
+  // Survival's escalating ladder: round N is worth BASE + N*STEP.
+  _survivalPayout(rounds) {
+    let total = 0;
+    for (let i = 1; i <= rounds; i++) total += this.mode.payoutBase + i * this.mode.payoutStep;
+    return total;
+  }
+
   _completeMatch({ forfeitedBy = null } = {}) {
     const m = this.mode;
     let outcome;
     let payoutOverride = null;
+    // Survival and Blitz pay on what each player personally did, so the two
+    // seats need separate payouts rather than one mirrored number.
+    let oppPayoutOverride = null;
+
+    const compare = (mine, theirs) => (mine > theirs ? 'win' : mine < theirs ? 'loss' : 'draw');
 
     if (forfeitedBy) {
       // Whoever is left standing wins, whatever the scoreline said.
       outcome = forfeitedBy === 'player' ? 'loss' : 'win';
     } else if (m.suddenDeath) {
       // Survival pays per round survived, escalating.
-      outcome = this.survivalScore > 0 ? 'win' : 'loss';
-      let total = 0;
-      for (let i = 1; i <= this.survivalScore; i++) total += m.payoutBase + i * m.payoutStep;
-      payoutOverride = total;
+      payoutOverride = this._survivalPayout(this.survivalScore);
+      if (this.isPvp) {
+        oppPayoutOverride = this._survivalPayout(this.oppSurvivalScore);
+        // A race: whoever lasted longer takes it, and both still keep what
+        // their own run earned.
+        outcome = compare(this.survivalScore, this.oppSurvivalScore);
+      } else {
+        outcome = this.survivalScore > 0 ? 'win' : 'loss';
+      }
     } else if (m.totalTimeMs) {
       // Blitz pays per net correct call.
-      outcome = this.playerScore > 0 ? 'win' : 'loss';
       payoutOverride = Math.max(0, this.playerScore) * m.payoutPerPoint;
+      if (this.isPvp) {
+        oppPayoutOverride = Math.max(0, this.botScore) * m.payoutPerPoint;
+        outcome = compare(this.playerScore, this.botScore);
+      } else {
+        outcome = this.playerScore > 0 ? 'win' : 'loss';
+      }
     } else if (m.stages) {
       const cleared = this.stagesCleared;
       outcome = cleared >= m.stages.length ? 'win' : 'loss';
       payoutOverride = cleared * m.stageBonus + (outcome === 'win' ? m.clearBonus : 0);
+      if (this.isPvp) {
+        // Losing a stage eliminates you and hands it to the other player, so
+        // each seat is paid for the stages it actually took.
+        const oppWon = outcome !== 'win';
+        oppPayoutOverride =
+          this.oppStagesCleared * m.stageBonus + (oppWon ? m.clearBonus : 0);
+      }
     } else {
-      outcome = this.playerScore > this.botScore ? 'win' : this.playerScore < this.botScore ? 'loss' : 'draw';
+      outcome = compare(this.playerScore, this.botScore);
     }
 
     this.results[this.guestId] = this._applyFor(this.guestId, outcome, {
@@ -292,11 +358,14 @@ export class Match {
 
     if (this.isPvp) {
       this.results[this.opponent.guestId] = this._applyFor(this.opponent.guestId, mirror(outcome), {
-        payoutOverride,
+        payoutOverride: oppPayoutOverride ?? payoutOverride,
         wager: this.opponentWager,
-        score: this.botScore,
+        score: m.suddenDeath ? this.oppSurvivalScore : this.botScore,
         myScore: this.botScore,
         theirScore: this.playerScore,
+        survivalScore: this.oppSurvivalScore,
+        stagesCleared: this.oppStagesCleared,
+        endReason: this.oppEndReason ?? this.endReason,
       });
     }
 
@@ -306,7 +375,11 @@ export class Match {
     this.onChange?.();
   }
 
-  _applyFor(guestId, outcome, { payoutOverride, wager, score, myScore, theirScore }) {
+  _applyFor(
+    guestId,
+    outcome,
+    { payoutOverride, wager, score, myScore, theirScore, survivalScore, stagesCleared, endReason },
+  ) {
     const m = this.mode;
     const applied = applyMatchResult(guestId, outcome, {
       mode: m.id,
@@ -320,7 +393,7 @@ export class Match {
       mode: m.id,
       modeName: m.name,
       outcome,
-      endReason: this.endReason,
+      endReason: endReason ?? this.endReason,
       delta: applied.delta,
       streak: applied.streak,
       multiplier: applied.multiplier,
@@ -329,8 +402,8 @@ export class Match {
       newBest: applied.newBest,
       playerScore: myScore,
       botScore: theirScore,
-      survivalScore: this.survivalScore,
-      stagesCleared: this.stagesCleared,
+      survivalScore: survivalScore ?? this.survivalScore,
+      stagesCleared: stagesCleared ?? this.stagesCleared,
       stagesTotal: m.stages?.length ?? 0,
       wager,
       rounds: this.round,
@@ -347,6 +420,12 @@ export class Match {
       direction === 'up' || direction === 'down' || (direction === 'hold' && this.mode.holdAllowed !== false);
     if (!allowed) return false;
 
+    // A player already out of a Survival run does not get to keep calling.
+    if (this.mode.suddenDeath) {
+      if (seat === 'player' && this.dead) return false;
+      if (seat === 'opponent' && this.oppDead) return false;
+    }
+
     if (seat === 'player') {
       if (this.playerGuess) return false;
       this.playerGuess = direction;
@@ -358,7 +437,7 @@ export class Match {
     // A solo/AI match resolves the moment the player calls it. A PvP round
     // waits for both seats, or for the timer, which scores a missing call as
     // a no-call.
-    if (this.isPvp && !(this.playerGuess && this.botGuess)) {
+    if (this.isPvp && !(this._seatAnswered('player') && this._seatAnswered('opponent'))) {
       this.onChange?.();
       return true;
     }
@@ -379,6 +458,11 @@ export class Match {
     const theirStage = asOpponent ? this.stagePlayerScore : this.stageBotScore;
     const myGuess = asOpponent ? this.botGuess : this.playerGuess;
     const theirGuess = asOpponent ? this.playerGuess : this.botGuess;
+    const mySurvival = asOpponent ? this.oppSurvivalScore : this.survivalScore;
+    const theirSurvival = asOpponent ? this.survivalScore : this.oppSurvivalScore;
+    const myStages = asOpponent ? this.oppStagesCleared : this.stagesCleared;
+    const iAmOut = asOpponent ? this.oppDead : this.dead;
+    const theyAreOut = asOpponent ? this.dead : this.oppDead;
 
     const o = this.lastRoundOutcome;
     const roundOutcome =
@@ -396,7 +480,10 @@ export class Match {
       mode: m.id,
       modeName: m.name,
       modeIcon: m.icon,
-      solo: !!m.solo,
+      // A "solo" mode played against a real person is not solo any more —
+      // the client uses this to pick the scoreboard, so it has to reflect
+      // whether there is actually someone on the other side.
+      solo: !!m.solo && !this.isPvp,
       pvp: this.isPvp,
       holdAllowed: m.holdAllowed !== false,
       // Who the viewer is facing: the AI, or the player on the other seat.
@@ -412,12 +499,16 @@ export class Match {
       // hand the viewer a free answer while their own guess is still open.
       yourGuess: this.phase === PHASES.GUESS ? myGuess : null,
       opponentLockedIn: this.isPvp && this.phase === PHASES.GUESS ? !!theirGuess : false,
-      survivalScore: this.survivalScore,
+      survivalScore: mySurvival,
+      opponentSurvivalScore: theirSurvival,
+      // Survival head-to-head: who is still standing.
+      youAreOut: !!iAmOut,
+      opponentIsOut: !!theyAreOut,
       deadline: this.deadline,
       wager: asOpponent ? this.opponentWager : this.wager,
       stageIndex: this.stageIndex,
       stageName: this.currentStage?.name ?? null,
-      stagesCleared: this.stagesCleared,
+      stagesCleared: myStages,
       stagesTotal: m.stages?.length ?? 0,
       stagePlayerScore: myStage,
       stageBotScore: theirStage,

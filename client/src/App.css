@@ -3503,3 +3503,14 @@ button.id-badge-title {
     height: 48px;
   }
 }
+
+/* Survival head-to-head: a player whose run has ended just watches. */
+.knocked-out {
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--down);
+  opacity: 0.9;
+}

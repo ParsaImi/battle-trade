@@ -394,6 +394,10 @@ function handleMessage(ws, meta, msg) {
             status: 'searching',
             waitMs: matchmaking.WAIT_MS,
             startedAt: Date.now(),
+            // Survival and Blitz have no AI rival to fall back to — alone,
+            // they are simply a solo run. The client says so rather than
+            // promising an opponent that does not exist.
+            soloFallback: !!mode.solo,
           });
         }
         return;

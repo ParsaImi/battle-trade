@@ -211,8 +211,18 @@ export default function MatchView({ match, you, opponent, onGuess, onLeave, onPl
   const swingLabel = pct === null ? null : `${pct >= 0 ? '+' : ''}${(pct * 100).toFixed(2)}%`;
 
   // Gauntlet scores by stage; every other 1v1 mode by the running total.
-  const myScore = match.mode === 'gauntlet' ? match.stagePlayerScore : match.playerScore;
-  const theirScore = match.mode === 'gauntlet' ? match.stageBotScore : match.botScore;
+  const myScore =
+    match.mode === 'gauntlet'
+      ? match.stagePlayerScore
+      : match.mode === 'survival'
+        ? match.survivalScore
+        : match.playerScore;
+  const theirScore =
+    match.mode === 'gauntlet'
+      ? match.stageBotScore
+      : match.mode === 'survival'
+        ? (match.opponentSurvivalScore ?? 0)
+        : match.botScore;
   const youLeading = myScore > theirScore;
   const oppLeading = theirScore > myScore;
 
@@ -276,20 +286,26 @@ export default function MatchView({ match, you, opponent, onGuess, onLeave, onPl
               <div className="matchup-avatar"><Avatar id={you?.avatar} /></div>
               <span className="matchup-name">{you?.nickname || 'You'}</span>
               <span className="matchup-score">{myScore}</span>
+              {match.youAreOut && <span className="knocked-out">Out</span>}
             </div>
             <div className="matchup-vs">VS</div>
             <div className={`matchup-side ${oppLeading ? 'leading' : ''}`}>
               <div className="matchup-avatar"><Avatar id={opponent?.avatar} /></div>
               <span className="matchup-name">
-                {match.mode === 'gauntlet' ? match.stageName : oppName}
+                {match.mode === 'gauntlet' && !match.pvp ? match.stageName : oppName}
               </span>
               {/* Only a real person is badged. A bot is shown as an ordinary
                   trader and is never labelled live. Sits outside
                   .matchup-name, which clips its overflow. */}
               {match.pvp && <span className="live-badge">LIVE</span>}
               <span className="matchup-score">{theirScore}</span>
-              {/* Their call is in, but not what it was. */}
-              {match.opponentLockedIn && <span className="locked-in">Locked in</span>}
+              {/* Survival: someone already out just watches the rest. */}
+              {match.opponentIsOut ? (
+                <span className="knocked-out">Out</span>
+              ) : (
+                /* Their call is in, but not what it was. */
+                match.opponentLockedIn && <span className="locked-in">Locked in</span>
+              )}
             </div>
           </div>
         )}
