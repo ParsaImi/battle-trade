@@ -1742,44 +1742,9 @@ button.id-badge-title {
   font-size: 10px;
 }
 
-.title-picker {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background: var(--glass-bg);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  border: 1px solid var(--glass-border);
-  border-radius: 14px;
-  padding: 8px;
-  z-index: 10;
-  box-shadow: var(--glass-shadow);
-  white-space: nowrap;
-}
 
-.title-option {
-  padding: 7px 12px;
-  border-radius: 8px;
-  border: none;
-  background: none;
-  color: var(--text);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
 
-.title-option:hover {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-}
 
-.title-option.selected {
-  color: var(--accent);
-  font-weight: 700;
-}
 
 /* Coin burst: pop + glow + tiny particle scatter */
 
@@ -3494,4 +3459,198 @@ button.id-badge-title {
   font-weight: 700;
   color: var(--down);
   opacity: 0.9;
+}
+
+/* Title picker. Same reason as the avatar one: the old dropdown was clipped
+   by .player-hero's backdrop-filter, which confines descendant painting to
+   its own box regardless of overflow. A modal escapes that entirely. */
+.title-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 4px 0 18px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.title-grid-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 56px;
+  padding: 10px 8px;
+  border-radius: 14px;
+  border: 1px solid var(--glass-border-top);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 120ms ease;
+}
+
+.title-grid-item:hover,
+.title-grid-item:focus-visible {
+  border-color: var(--accent);
+}
+
+.title-grid-item:active {
+  transform: scale(0.97);
+}
+
+.title-grid-item.current {
+  border-color: var(--up);
+  background: color-mix(in srgb, var(--up) 14%, transparent);
+}
+
+.title-grid-name {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.title-grid-tag {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--up);
+}
+
+@media (max-width: 380px) {
+  .title-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Search screen actions: skip the wait, or back out. */
+.mm-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 26px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.mm-play-ai {
+  padding: 10px 22px;
+  min-height: 44px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent-grad, linear-gradient(135deg, #7c5cff, #4dd8ff));
+  color: #08111d;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: transform 120ms ease, filter 160ms ease;
+}
+
+.mm-play-ai:hover,
+.mm-play-ai:focus-visible {
+  filter: brightness(1.08);
+}
+
+.mm-play-ai:active {
+  transform: scale(0.97);
+}
+
+/* The cancel button already existed on its own; inside the row it should not
+   carry the old standalone top margin. */
+.mm-actions .mm-cancel {
+  margin-top: 0;
+}
+
+/* Titles are purchasable now, so the grid carries the same states as the
+   avatar grid: owned, equipped, or priced. */
+.title-grid-item.locked .title-grid-name {
+  color: var(--text-dim);
+}
+
+.title-grid-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.title-grid-tag.owned {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.title-grid-tag.price {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.title-grid-tag.price.affordable {
+  color: var(--accent-2, #4dd8ff);
+}
+
+/* Emotes now travel between players, so it has to be obvious whose is whose:
+   yours rise from your side, theirs drift down with their name on it. */
+.emote-burst.theirs {
+  color: var(--accent-2, #4dd8ff);
+}
+
+.emote-from {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Auth entry point in the header. Signing in used to be reachable only from
+   Settings, which a guest has no reason to open. */
+.topbar-signin {
+  margin-left: 4px;
+  padding: 6px 14px;
+  min-height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border-top);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.topbar-signin:hover,
+.topbar-signin:focus-visible {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.topbar-account {
+  margin-left: 4px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--up) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--up) 38%, transparent);
+  color: var(--up);
+  font-size: 12px;
+  font-weight: 700;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 460px) {
+  .topbar-signin {
+    padding: 6px 11px;
+    font-size: 12px;
+  }
+  .topbar-account {
+    max-width: 96px;
+    font-size: 11px;
+  }
 }

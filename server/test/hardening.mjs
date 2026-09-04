@@ -146,10 +146,12 @@ ok('ignores actions before register', exited === null);
   const ws = await open();
   ws.send(JSON.stringify({ type: 'register', guestId: 'probe-guest-flush', nickname: 'FlushMe' }));
   await nextMsg(ws, 'registered');
-  ws.send(JSON.stringify({ type: 'set_title', title: 'Diamond Hands' }));
+  // A free title: equipping is ownership-checked now, and this test is about
+  // whether the write reaches disk, not about the shop.
+  ws.send(JSON.stringify({ type: 'set_title', title: 'Paper Hands' }));
   await sleep(900); // longer than the 400ms save debounce
   const saved = JSON.parse(fs.readFileSync(DATA, 'utf-8'));
-  ok('debounced write reaches disk', saved['probe-guest-flush']?.title === 'Diamond Hands',
+  ok('debounced write reaches disk', saved['probe-guest-flush']?.title === 'Paper Hands',
      `title=${saved['probe-guest-flush']?.title}`);
   ok('no temp file left behind', !fs.existsSync(DATA + '.tmp'));
   ok('save file is valid JSON', typeof saved === 'object' && !Array.isArray(saved));

@@ -23,7 +23,7 @@ function stageFor(msLeft) {
   return 'go';
 }
 
-export default function Matchmaking({ search, avatar, nickname, onCancel }) {
+export default function Matchmaking({ search, avatar, nickname, onCancel, onPlayAi }) {
   const [line] = useState(() => LINES[Math.floor(Math.random() * LINES.length)]);
   const [now, setNow] = useState(() => Date.now());
 
@@ -61,9 +61,16 @@ export default function Matchmaking({ search, avatar, nickname, onCancel }) {
               : `No one yet — ${left}s until you're matched with an AI opponent`
             : 'Setting up your match…'}
         </p>
-        <button type="button" className="mm-cancel" onClick={onCancel}>
-          Cancel
-        </button>
+        <div className="mm-actions">
+          {/* Skip the wait. Survival and Blitz have no AI rival, so there it
+              simply starts the solo run early. */}
+          <button type="button" className="mm-play-ai" onClick={onPlayAi}>
+            {search.soloFallback ? 'Start solo now' : 'Play with AI'}
+          </button>
+          <button type="button" className="mm-cancel" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
       </div>
     );
   }

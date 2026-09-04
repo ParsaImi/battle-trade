@@ -32,6 +32,8 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
   const [account, setAccount] = useState(null);
   const [authError, setAuthError] = useState(null);
   const [authBusy, setAuthBusy] = useState(false);
+  // Reactions the opponent has sent us, drained by the match view.
+  const [incomingEmote, setIncomingEmote] = useState(null);
   // Mirrors `search` for use inside socket callbacks, which close over the
   // state value from the render that created them.
   const searchRef = useRef(null);
@@ -111,6 +113,8 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
           // The match is live, so the matchmaking screen is done.
           applySearch(null);
           setMatch(msg.match);
+        } else if (msg.type === 'emote') {
+          setIncomingEmote({ emoji: msg.emoji, key: `${Date.now()}-${Math.random()}` });
         } else if (msg.type === 'matchmaking') {
           if (msg.status === 'cancelled') {
             applySearch(null);
@@ -214,6 +218,7 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
     match,
     search,
     account,
+    incomingEmote,
     authError,
     authBusy,
     clearAuthError: () => setAuthError(null),
@@ -226,6 +231,8 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
     setAvatar: (avatar) => send({ type: 'set_avatar', avatar }),
     setTitle: (title) => send({ type: 'set_title', title }),
     buyAvatar: (avatar) => send({ type: 'buy_avatar', avatar }),
+    buyTitle: (title) => send({ type: 'buy_title', title }),
+    sendEmote: (emoji) => send({ type: 'emote', emoji }),
     claimQuest: (questId) => send({ type: 'claim_quest', questId }),
     renameNickname: (name) => send({ type: 'set_nickname', nickname: name }),
     signup: (username, password) => {
@@ -240,6 +247,7 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
     },
     logout: () => send({ type: 'logout', token: tokenRef.current }),
     findMatch: (mode = 'classic', wager = 0) => send({ type: 'find_match', mode, wager }),
+    playWithAi: () => send({ type: 'play_ai' }),
     cancelSearch: () => {
       applySearch(null);
       send({ type: 'cancel_match' });

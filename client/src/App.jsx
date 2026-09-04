@@ -81,6 +81,7 @@ export default function App() {
     match,
     search,
     account,
+    incomingEmote,
     authError,
     authBusy,
     clearAuthError,
@@ -93,15 +94,18 @@ export default function App() {
     setAvatar,
     setTitle,
     buyAvatar,
+    buyTitle,
     claimQuest,
     renameNickname,
     findMatch,
     cancelSearch,
+    playWithAi,
     signup,
     login,
     logout,
     submitGuess,
     leaveMatch,
+    sendEmote,
   } = useGameSocket(guestId, nickname, token, setToken, authOpen !== null);
   const remaining = useCountdown(match?.phaseEndsAt);
   const [selectedMode, setSelectedMode] = useState('classic');
@@ -301,6 +305,18 @@ export default function App() {
           <span className="brand-wordmark">Battle Trade</span>
         </button>
         <div className={`conn-dot ${connected ? 'on' : 'off'}`} title={connected ? 'Connected' : 'Reconnecting…'} />
+
+        {/* Signing in was only reachable from Settings once you were playing.
+            A guest should be able to find it without going looking. */}
+        {account ? (
+          <span className="topbar-account" title={`Signed in as ${account}`}>
+            {account}
+          </span>
+        ) : (
+          <button type="button" className="topbar-signin" onClick={() => setAuthOpen('login')}>
+            Sign in
+          </button>
+        )}
       </header>
 
       {everConnected && !connected && (
@@ -321,6 +337,7 @@ export default function App() {
           avatar={you?.avatar || 'nomad'}
           nickname={you?.nickname || nickname}
           onCancel={cancelSearch}
+          onPlayAi={playWithAi}
         />
       ) : match ? (
         <MatchView
@@ -331,6 +348,8 @@ export default function App() {
           onLeave={requestLeave}
           onPlayAgain={handlePlayAgain}
           remaining={remaining}
+          onEmote={sendEmote}
+          incomingEmote={incomingEmote}
         />
       ) : (
         <Lobby
@@ -344,6 +363,7 @@ export default function App() {
           onSetAvatar={setAvatar}
           onSetTitle={setTitle}
           onBuyAvatar={buyAvatar}
+          onBuyTitle={buyTitle}
           onClaimQuest={claimQuest}
           onRename={renameNickname}
           onPlay={handlePlay}

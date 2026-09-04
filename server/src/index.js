@@ -31,6 +31,10 @@ const PREMATCH_MS = Number(process.env.PREMATCH_MS) || 3_600;
 // also locks out a username after repeated failures; this is the other half,
 // stopping one socket from sweeping many usernames.
 const AUTH_ATTEMPTS_PER_MIN = 10;
+// Emotes are the one thing a player can push onto someone else's screen, so
+// they are allowlisted and rate limited. Mirror of QUICK_EMOTES in the client.
+const EMOTES = ['🐂', '🐻', '🎯', '💀', '🔥', '😭', '😂'];
+const EMOTE_COOLDOWN_MS = 600;
 
 store.load();
 accounts.load();
@@ -340,6 +344,13 @@ function handleMessage(ws, meta, msg) {
       return;
     }
 
+    case 'buy_title': {
+      const result = store.buyTitle(meta.guestId, msg.title);
+      send(ws, { type: 'purchase', kind: 'title', title: msg.title, ...result });
+      sendLobby(ws, meta.guestId);
+      return;
+    }
+
     case 'claim_quest': {
       const result = store.claimQuest(meta.guestId, msg.questId);
       send(ws, { type: 'quest_claimed', questId: msg.questId, ...result });
@@ -415,11 +426,45 @@ function handleMessage(ws, meta, msg) {
       send(ws, { type: 'auth', ok: true, action: 'logout' });
       return;
 
+    // "Play with AI" — stop waiting and start right now. Takes the player
+    // out of the queue and begins the match they would have got anyway once
+    // the wait ran out: an AI rival, or a solo run in Survival and Blitz.
+    // The wager is NOT refunded here, because the match is going ahead.
+    case 'play_ai': {
+      const entry = matchmaking.leaveBySocket(ws);
+      // Not searching — nothing to skip. Ignore rather than starting a second
+      // match on top of whatever they are already doing.
+      if (!entry) return;
+      beginMatch([entry]);
+      return;
+    }
+
     case 'cancel_match':
       abandonSearch(meta, ws);
       send(ws, { type: 'matchmaking', status: 'cancelled', reason: 'you_cancelled' });
       sendLobby(ws, meta.guestId);
       return;
+
+    // Relay a reaction to the other player. Emotes used to be a purely local
+    // flourish — they never left the browser, so in a real PvP match the
+    // opponent never saw a thing.
+    case 'emote': {
+      const match = meta.match;
+      if (!match || !match.isPvp || match.phase === 'complete') return;
+      // Only the fixed set: this is the one channel a player can put content
+      // on someone else's screen with, and it is not going to become one for
+      // arbitrary text.
+      if (!EMOTES.includes(msg.emoji)) return;
+
+      const now = Date.now();
+      if (now - (meta.lastEmote ?? 0) < EMOTE_COOLDOWN_MS) return;
+      meta.lastEmote = now;
+
+      const target = match.participants.find((id) => id !== meta.guestId);
+      const targetWs = target && socketByGuest.get(target);
+      if (targetWs) send(targetWs, { type: 'emote', emoji: msg.emoji });
+      return;
+    }
 
     case 'match_guess':
       meta.match?.submitGuess(msg.direction, meta.guestId);
@@ -454,6 +499,7 @@ wss.on('connection', (ws) => {
     pendingStart: null,
     authAttempts: 0,
     authWindowStart: 0,
+    lastEmote: 0,
     tokens: RATE_BURST,
     lastRefill: Date.now(),
     lastStart: 0,

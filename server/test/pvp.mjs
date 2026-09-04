@@ -8,10 +8,12 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import { WebSocket } from 'ws';
 
 const CWD = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORT = Number(process.env.PROBE_PORT) || 8913;
+const DATA_DIR_PATH = path.join(CWD, 'test', '.tmp-pvp');
 const WAIT_MS = 1500;    // stand-in for the real 30s queue wait
 const PREMATCH_MS = 300; // stand-in for the real VS countdown
 
@@ -24,7 +26,28 @@ const ok = (cond, msg) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let server;
+const LEGACY_ID = 'pvp-legacy-000000001';
+
 async function startServer() {
+  // A player from before titles were purchasable, wearing one that now costs
+  // 500 coins. They must not be stripped of it on upgrade.
+  fs.mkdirSync(DATA_DIR_PATH, { recursive: true });
+  fs.writeFileSync(
+    path.join(DATA_DIR_PATH, 'data.json'),
+    JSON.stringify({
+      [LEGACY_ID]: {
+        nickname: 'OldTimer',
+        avatar: 'nomad',
+        title: 'The Sniper',
+        coins: 3000,
+        weeklyCoins: 0,
+        streak: 0,
+        xp: 0,
+        lastBonusDay: null,
+      },
+    }, null, 2),
+  );
+
   server = spawn(process.execPath, ['src/index.js'], {
     cwd: CWD,
     env: {
@@ -32,7 +55,7 @@ async function startServer() {
       PORT: String(PORT),
       MATCH_WAIT_MS: String(WAIT_MS),
       PREMATCH_MS: String(PREMATCH_MS),
-      DATA_DIR: path.join(CWD, 'test', '.tmp-pvp'),
+      DATA_DIR: DATA_DIR_PATH,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -332,6 +355,131 @@ async function run() {
     q.survivalScore + ' rounds / ' + q.delta + ' coins');
   s1.close();
   s2.close();
+
+  // --- "Play with AI" skips the wait ----------------------------------------
+  const skip = await connect('pvp-skip-000000001', 'Impatient');
+  await sleep(250);
+  const beforeSkip = Date.now();
+  skip.send({ type: 'find_match', mode: 'classic' });
+  await waitFor(skip, (f) => f.type === 'matchmaking' && f.status === 'searching', 4000, 'searching(skip)');
+
+  skip.send({ type: 'play_ai' });
+  const skipFound = await waitFor(
+    skip, (f) => f.type === 'matchmaking' && f.status === 'found', 5000, 'skip found');
+  const skipWait = Date.now() - beforeSkip;
+  ok(skipWait < WAIT_MS, 'play_ai starts the match without waiting out the queue (' + skipWait + 'ms < ' + WAIT_MS + 'ms)');
+  ok(skipFound.pvp === false, 'the skipped match is against the AI, not flagged pvp');
+  ok(skipFound.opponent?.isBot === true, 'and the opponent is an AI (' + skipFound.opponent?.nickname + ')');
+
+  await sleep(400);
+  const afterSkip = await (await fetch('http://127.0.0.1:' + PORT + '/health')).json();
+  ok(afterSkip.queued === 0, 'the player is no longer sitting in the queue');
+  await waitFor(skip, (f) => f.type === 'match', 6000, 'skip match started');
+  ok(true, 'and the match actually begins');
+
+  // Pressing it when not searching must not start a stray second match.
+  const strayBefore = skip.matches.length;
+  skip.send({ type: 'play_ai' });
+  await sleep(800);
+  const strayMatches = skip.matches.slice(strayBefore).filter((m) => m.round === 1 && m.phase === 'guess');
+  ok(strayMatches.length === 0, 'pressing it again while already playing does nothing');
+  skip.close();
+  await sleep(200);
+
+  // --- emotes actually reach the other player -------------------------------
+  // They used to be a purely local flourish that never left the browser, so in
+  // a real match the opponent saw nothing.
+  const e1 = await connect('pvp-emote-000000001', 'Sender');
+  const e2 = await connect('pvp-emote-000000002', 'Receiver');
+  await sleep(300);
+  e1.send({ type: 'find_match', mode: 'classic' });
+  await sleep(250);
+  e2.send({ type: 'find_match', mode: 'classic' });
+  await waitFor(e1, (f) => f.type === 'match', 10000, 'emote match');
+  await waitFor(e2, (f) => f.type === 'match', 10000, 'emote match 2');
+
+  e1.send({ type: 'emote', emoji: '🔥' });
+  const got = await waitFor(e2, (f) => f.type === 'emote', 5000, 'emote relayed');
+  ok(got.emoji === '🔥', 'an emote reaches the opponent (' + got.emoji + ')');
+  ok(!e1.frames.some((f) => f.type === 'emote'), 'and is not echoed back to the sender');
+
+  // Only the fixed set may cross: this is the one channel that puts content
+  // on someone else's screen.
+  const before = e2.frames.filter((f) => f.type === 'emote').length;
+  e1.send({ type: 'emote', emoji: 'CLICK HERE http://evil.example' });
+  await sleep(700);
+  ok(e2.frames.filter((f) => f.type === 'emote').length === before,
+     'arbitrary text is refused — only the allowlisted emotes relay');
+
+  // Spamming is throttled rather than flooding the opponent.
+  const beforeSpam = e2.frames.filter((f) => f.type === 'emote').length;
+  for (let i = 0; i < 6; i++) e1.send({ type: 'emote', emoji: '💀' });
+  await sleep(900);
+  const delivered = e2.frames.filter((f) => f.type === 'emote').length - beforeSpam;
+  ok(delivered < 6, 'rapid-fire emotes are rate limited (' + delivered + ' of 6 delivered)');
+  e1.close();
+  e2.close();
+  await sleep(300);
+
+  // --- titles are owned, priced, and grandfathered --------------------------
+  const t = await connect('pvp-title-000000001', 'Collector');
+  await waitFor(t, (f) => f.type === 'registered', 5000, 'registered(title)');
+  await sleep(400);
+  let lob = t.frames.filter((f) => f.type === 'lobby').pop();
+  ok(lob.you.unlockedTitles.length === 2, 'a new player owns exactly the two free titles');
+  ok(lob.you.unlockedTitles.includes('Rookie') && lob.you.unlockedTitles.includes('Paper Hands'),
+     'and they are the free ones (' + lob.you.unlockedTitles.join(', ') + ')');
+
+  // Wearing a title you do not own must be refused server-side.
+  t.send({ type: 'set_title', title: 'Legend' });
+  await sleep(500);
+  lob = t.frames.filter((f) => f.type === 'lobby').pop();
+  ok(lob.you.title !== 'Legend', 'a title you do not own cannot be equipped');
+
+  // Nor bought without the coins.
+  t.send({ type: 'buy_title', title: 'Legend' });
+  const denied = await waitFor(t, (f) => f.type === 'purchase' && f.kind === 'title', 5000, 'denied');
+  ok(denied.ok === false && denied.reason === 'not_enough_coins',
+     'and cannot be bought without the coins (' + denied.reason + ')');
+
+  // An affordable one goes through and equips itself.
+  t.send({ type: 'buy_title', title: 'Lucky Bastard' });
+  await sleep(600);
+  lob = t.frames.filter((f) => f.type === 'lobby').pop();
+  const bought = lob.you.unlockedTitles.includes('Lucky Bastard');
+  ok(!bought || lob.you.title === 'Lucky Bastard',
+     'buying a title equips it in the same step' + (bought ? '' : ' (skipped: player could not afford it)'));
+  t.close();
+  await sleep(200);
+
+  // --- a player already wearing a now-paid title keeps it -------------------
+  const old = await connect(LEGACY_ID, 'OldTimer');
+  await waitFor(old, (f) => f.type === 'registered', 5000, 'registered(legacy)');
+  await sleep(400);
+  let ol = old.frames.filter((f) => f.type === 'lobby').pop();
+  ok(ol.you.title === 'The Sniper',
+     'a player wearing a title from before it was purchasable keeps wearing it');
+  ok(ol.you.unlockedTitles.includes('The Sniper'),
+     'and it is granted to them rather than left equipped-but-unowned');
+
+  // With coins in hand, buying works end to end. Read the balance first: the
+  // daily login bonus lands on connect, so the seeded number is not the one to
+  // subtract from.
+  const coinsBefore = ol.you.coins;
+  old.send({ type: 'buy_title', title: 'Market Maker' });
+  await sleep(700);
+  ol = old.frames.filter((f) => f.type === 'lobby').pop();
+  ok(ol.you.unlockedTitles.includes('Market Maker'), 'a title they can afford is bought');
+  ok(ol.you.title === 'Market Maker', 'and equipped in the same step');
+  ok(ol.you.coins === coinsBefore - 1000,
+     'the price is deducted (' + coinsBefore + ' - 1000 = ' + ol.you.coins + ')');
+
+  old.send({ type: 'set_title', title: 'The Sniper' });
+  await sleep(500);
+  ol = old.frames.filter((f) => f.type === 'lobby').pop();
+  ok(ol.you.title === 'The Sniper', 'and they can switch back to one they already own');
+  old.close();
+  await sleep(200);
 
   await sleep(200);
   console.log(`\n${pass} passed, ${fail} failed`);

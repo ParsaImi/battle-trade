@@ -81,7 +81,9 @@ async function run() {
   ok(reg.account === null, 'a plain guest reports no account');
 
   // Give this guest something worth keeping.
-  guest.send({ type: 'set_title', title: 'Diamond Hands' });
+  // A free title — equipping is ownership-checked since titles became
+  // purchasable, and this test is about the account carrying progress.
+  guest.send({ type: 'set_title', title: 'Paper Hands' });
   await sleep(400);
   const lobby = guest.last('lobby');
   const coinsBefore = lobby.you.coins;
@@ -144,7 +146,7 @@ async function run() {
   const otherLobby = other.last('lobby');
   ok(otherLobby.you.coins === coinsBefore,
      `the account's progress followed to the second device (${otherLobby.you.coins} coins)`);
-  ok(otherLobby.you.title === 'Diamond Hands', 'and so did the equipped title');
+  ok(otherLobby.you.title === 'Paper Hands', 'and so did the equipped title');
   const secondToken = loginRes.token;
   ok(secondToken !== token, 'each login mints a distinct session token');
   other.close();

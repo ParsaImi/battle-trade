@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Leaderboard from './Leaderboard';
 import SettingsModal from './SettingsModal';
 import AvatarPickerModal from './AvatarPickerModal';
+import TitlePickerModal from './TitlePickerModal';
 import HowToPlayModal from './HowToPlayModal';
 import ShopModal from './ShopModal';
 import QuestsModal from './QuestsModal';
@@ -13,7 +14,6 @@ import { MODE_BY_ID } from './gameModes';
 import { useOnlinePlayers } from '../hooks/useOnlinePlayers';
 import { useMuted } from '../hooks/useMuted';
 import Avatar from './Avatar';
-import { TITLES } from './titles';
 import { startAmbient, stopAmbient } from '../lib/sound';
 
 const TICKER_MS = 4200;
@@ -54,6 +54,7 @@ export default function Lobby({
   onSetAvatar,
   onSetTitle,
   onBuyAvatar,
+  onBuyTitle,
   onClaimQuest,
   onRename,
   onPlay,
@@ -132,26 +133,9 @@ export default function Lobby({
               <CoinBurst value={you?.coins ?? 0} />
             </span>
             <div className="id-badge-title-wrap">
-              <button type="button" className="id-badge id-badge-title" onClick={() => setTitlePickerOpen((v) => !v)}>
+              <button type="button" className="id-badge id-badge-title" onClick={() => setTitlePickerOpen(true)}>
                 {you?.title || 'Pick a title'} <span className="id-badge-edit">✎</span>
               </button>
-              {titlePickerOpen && (
-                <div className="title-picker">
-                  {TITLES.map((t) => (
-                    <button
-                      type="button"
-                      key={t}
-                      className={`title-option ${t === you?.title ? 'selected' : ''}`}
-                      onClick={() => {
-                        onSetTitle(t);
-                        setTitlePickerOpen(false);
-                      }}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
 
@@ -280,6 +264,14 @@ export default function Lobby({
             localStorage.setItem('battle-trade:seenRules', '1');
             setRulesOpen(false);
           }}
+        />
+      )}
+      {titlePickerOpen && (
+        <TitlePickerModal
+          you={you}
+          onSelect={onSetTitle}
+          onBuy={onBuyTitle}
+          onClose={() => setTitlePickerOpen(false)}
         />
       )}
       {pickerOpen && (

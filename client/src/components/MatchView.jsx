@@ -49,7 +49,17 @@ function RoundResultText({ outcome, opponentName, nearMiss, solo }) {
   return <>You called it wrong. {botText}</>;
 }
 
-export default function MatchView({ match, you, opponent, onGuess, onLeave, onPlayAgain, remaining }) {
+export default function MatchView({
+  match,
+  you,
+  opponent,
+  onGuess,
+  onLeave,
+  onPlayAgain,
+  remaining,
+  onEmote,
+  incomingEmote,
+}) {
   // Server-supplied opponent profile. Solo modes send none.
   const oppName = opponent?.nickname ?? 'Opponent';
   const [autoReturn, setAutoReturn] = useState(null);
@@ -359,7 +369,7 @@ export default function MatchView({ match, you, opponent, onGuess, onLeave, onPl
           )}
         </p>
 
-        <QuickEmotes />
+        <QuickEmotes onSend={onEmote} incomingEmote={incomingEmote} opponentName={oppName} />
       </div>
     </div>
   );

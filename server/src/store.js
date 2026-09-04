@@ -15,6 +15,9 @@ import {
   avatarPrice,
   levelFromXp,
   questsForDay,
+  TITLE_NAMES,
+  FREE_TITLES,
+  titlePrice,
 } from './gameData.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -118,7 +121,8 @@ function currentDayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-const TITLES = ['The Whale', 'The Sniper', 'Diamond Hands', 'Market Maker', 'Lucky Bastard', 'Paper Hands'];
+// Kept as a re-export so anything still importing TITLES keeps working.
+const TITLES = TITLE_NAMES;
 
 const EMPTY_STATS = {
   matchesPlayed: 0,
@@ -153,6 +157,20 @@ function ensureShape(g) {
   }
   if (!Array.isArray(g.achievements)) g.achievements = [];
   if (typeof g.title === 'undefined') g.title = null;
+
+  // Titles became purchasable after players were already wearing them. Anyone
+  // with a title equipped keeps it for free — taking it away to sell it back
+  // would be robbing them of something they already had.
+  if (!Array.isArray(g.unlockedTitles)) g.unlockedTitles = [];
+  g.unlockedTitles = g.unlockedTitles.filter((t) => TITLE_NAMES.includes(t));
+  for (const t of FREE_TITLES) {
+    if (!g.unlockedTitles.includes(t)) g.unlockedTitles.push(t);
+  }
+  if (g.title && TITLE_NAMES.includes(g.title) && !g.unlockedTitles.includes(g.title)) {
+    g.unlockedTitles.push(g.title);
+  }
+  // A title that no longer exists at all is dropped rather than left dangling.
+  if (g.title && !TITLE_NAMES.includes(g.title)) g.title = null;
   if (!g.bests || typeof g.bests !== 'object') g.bests = {};
   if (!g.modeStats || typeof g.modeStats !== 'object') g.modeStats = {};
   return g;
@@ -239,10 +257,30 @@ export function buyAvatar(guestId, avatar) {
 
 export function setTitle(guestId, title) {
   const g = guests.get(guestId);
-  if (!g || !TITLES.includes(title)) return null;
+  if (!g || !TITLE_NAMES.includes(title)) return null;
+  ensureShape(g);
+  // Equipping is server-checked: a client cannot wear a title it never bought.
+  if (!g.unlockedTitles.includes(title)) return null;
   g.title = title;
   scheduleSave();
   return g.title;
+}
+
+export function buyTitle(guestId, title) {
+  const g = guests.get(guestId);
+  if (!g) return { ok: false, reason: 'no_player' };
+  ensureShape(g);
+
+  const price = titlePrice(title);
+  if (price === null) return { ok: false, reason: 'unknown_title' };
+  if (g.unlockedTitles.includes(title)) return { ok: false, reason: 'already_owned' };
+  if (g.coins < price) return { ok: false, reason: 'not_enough_coins' };
+
+  g.coins -= price;
+  g.unlockedTitles.push(title);
+  g.title = title; // equip what you just bought
+  scheduleSave();
+  return { ok: true, coins: g.coins, unlockedTitles: [...g.unlockedTitles], title: g.title };
 }
 
 const DAILY_BONUS = 50;
@@ -475,6 +513,7 @@ export function getGuestPublic(guestId) {
     bests: { ...g.bests },
     modeStats: { ...g.modeStats },
     unlockedAvatars: [...g.unlockedAvatars],
+    unlockedTitles: [...g.unlockedTitles],
     achievements: [...g.achievements],
   };
 }

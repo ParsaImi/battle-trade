@@ -40,6 +40,36 @@ export function avatarPrice(id) {
 // Daily quests. Three are drawn per day from this pool, chosen by a
 // day-seeded shuffle so everyone gets the same set and it stays stable
 // across reloads within the day.
+
+// Titles shown next to a player's name. Two starters are free; the rest are
+// priced by how much of a boast the name is, so "Legend" costs real grinding
+// and "Paper Hands" is free for a reason.
+//
+// The title's NAME is its id — that is what already sits in every save file,
+// and changing it would orphan the titles players are wearing today.
+export const TITLE_CATALOG = [
+  { name: 'Rookie', price: 0 },
+  { name: 'Paper Hands', price: 0 },
+  { name: 'Lucky Bastard', price: 250 },
+  { name: 'The Sniper', price: 500 },
+  { name: 'Diamond Hands', price: 750 },
+  { name: 'Market Maker', price: 1000 },
+  { name: 'The Whale', price: 1500 },
+  { name: 'Risk Taker', price: 2000 },
+  { name: 'Chart Wizard', price: 3000 },
+  { name: 'The Oracle', price: 5000 },
+  { name: 'Kingmaker', price: 7500 },
+  { name: 'Legend', price: 10000 },
+];
+
+export const TITLE_NAMES = TITLE_CATALOG.map((t) => t.name);
+export const FREE_TITLES = TITLE_CATALOG.filter((t) => t.price === 0).map((t) => t.name);
+
+export function titlePrice(name) {
+  const t = TITLE_CATALOG.find((x) => x.name === name);
+  return t ? t.price : null;
+}
+
 export const QUEST_POOL = [
   { id: 'win3', label: 'Win 3 matches', metric: 'matchesWon', target: 3, reward: 150 },
   { id: 'play5', label: 'Play 5 matches', metric: 'matchesPlayed', target: 5, reward: 100 },
