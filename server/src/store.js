@@ -18,7 +18,15 @@ import {
 } from './gameData.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_FILE = path.join(__dirname, '..', 'data.json');
+// Where the save file lives. Defaults to the package root, so local dev and
+// the test suite are unchanged; containers point DATA_DIR at a mounted volume
+// so player data survives a redeploy.
+//
+// This must be a DIRECTORY, never a path to the file itself: saveNow() renames
+// a temp file over data.json, and rename() fails with EBUSY across a
+// bind-mounted single file.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..');
+const DATA_FILE = path.join(DATA_DIR, 'data.json');
 const TMP_FILE = `${DATA_FILE}.tmp`;
 const BAK_FILE = `${DATA_FILE}.bak`;
 const SAVE_DEBOUNCE_MS = 400;
@@ -29,6 +37,11 @@ let guests = new Map();
 // main one is missing or corrupt (e.g. the process died mid-write before
 // saves were made atomic).
 export function load() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch (err) {
+    log.error(`could not create data directory ${DATA_DIR}`, err);
+  }
   for (const file of [DATA_FILE, BAK_FILE]) {
     let raw;
     try {

@@ -3,11 +3,21 @@ import { useEffect, useRef, useState } from 'react';
 // Derive the game server from whatever host served the page, so opening the
 // app from a phone at http://192.168.1.8:5173 talks to the server on that
 // same machine — hardcoding "localhost" would point the phone at itself.
-// Set VITE_WS_URL to override (e.g. a deployed backend on another host).
+//
+// Dev: vite serves on :5173 and the server has its own port, so aim at it.
+// Prod: nginx serves the built bundle and reverse-proxies the socket at /ws
+// on the SAME origin — one public port, no CORS, and wss:// comes for free
+// once TLS is in front, because we follow the page's protocol.
+//
+// VITE_WS_URL overrides both. Note it is inlined at BUILD time by Vite, so
+// setting it as a runtime container env var does nothing.
 const WS_PORT = import.meta.env.VITE_WS_PORT || '8787';
+const WS_SCHEME = window.location.protocol === 'https:' ? 'wss' : 'ws';
 const WS_URL =
   import.meta.env.VITE_WS_URL ||
-  `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:${WS_PORT}`;
+  (import.meta.env.PROD
+    ? `${WS_SCHEME}://${window.location.host}/ws`
+    : `${WS_SCHEME}://${window.location.hostname}:${WS_PORT}`);
 
 export function useGameSocket(guestId, nickname) {
   const [you, setYou] = useState(null);

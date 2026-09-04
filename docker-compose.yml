@@ -1,0 +1,43 @@
+# Battle Trade — single public port.
+#
+#   internet -> :${PUBLIC_PORT} -> web (nginx) -+-> /     static React bundle
+#                                               +-> /ws   proxied to server:8787
+#
+# The game server is NOT published to the host; nginx is the only way in.
+
+services:
+  server:
+    build: ./server
+    image: battle-trade-server
+    restart: unless-stopped
+    # tini as PID 1, so SIGTERM reaches node and the save flush actually runs.
+    init: true
+    environment:
+      PORT: "8787"
+      HOST: "0.0.0.0"
+      DATA_DIR: "/app/data"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-*}"
+    volumes:
+      # Player saves. Without this, every redeploy wipes coins and stats.
+      - player-data:/app/data
+    expose:
+      - "8787"
+
+  web:
+    build:
+      context: ./client
+      args:
+        # Empty for the normal same-origin deploy. Only set this if the
+        # backend is on another host — it is baked into the bundle.
+        VITE_WS_URL: "${VITE_WS_URL:-}"
+    image: battle-trade-web
+    restart: unless-stopped
+    ports:
+      - "${PUBLIC_PORT:-80}:80"
+    depends_on:
+      server:
+        # Wait for /health, so nginx never starts against a missing upstream.
+        condition: service_healthy
+
+volumes:
+  player-data:

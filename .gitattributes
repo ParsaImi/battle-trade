@@ -1,0 +1,7 @@
+# Deployment files run on Linux — never let them be checked out with CRLF.
+* text=auto
+Dockerfile text eol=lf
+*.conf   text eol=lf
+*.sh     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
