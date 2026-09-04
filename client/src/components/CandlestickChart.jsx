@@ -63,6 +63,7 @@ export default function CandlestickChart({ candles, roundId, direction, chartMet
   const levels = Array.from({ length: GRID_LINES }, (_, i) => min + (range * i) / (GRID_LINES - 1));
 
   const last = candles[candles.length - 1].close;
+  const lastPct = (yFor(last) / HEIGHT) * 100;
   const first = candles[0].open;
   const changePct = ((last - first) / first) * 100;
   const dp = decimalsFor(last);
@@ -145,11 +146,16 @@ export default function CandlestickChart({ candles, roundId, direction, chartMet
         {/* HTML, not SVG text: the chart stretches to fit, which would squash
             anything drawn inside it. */}
         <div className="chart-axis" aria-hidden="true">
-          {levels.map((p, i) => (
-            <span key={i} className="axis-label" style={{ top: `${pctFor(p)}%` }}>
-              {fmtAxis(p)}
-            </span>
-          ))}
+          {levels.map((p, i) => {
+            // The live-price pill is drawn on top of the scale, so drop any
+            // gridline label it would sit on rather than stacking the two.
+            if (Math.abs(pctFor(p) - lastPct) < 5) return null;
+            return (
+              <span key={i} className="axis-label" style={{ top: `${pctFor(p)}%` }}>
+                {fmtAxis(p)}
+              </span>
+            );
+          })}
           <span
             className={`axis-last ${changePct >= 0 ? 'up' : 'down'}`}
             style={{ top: `${pctFor(last)}%` }}

@@ -96,8 +96,21 @@ packages don't share a module):
 ## 4. Game mechanics
 
 ### Chart
-40 candles generated per round via random walk from price 100. First **28** shown during the
-guess phase; the remaining 12 are the reveal. Direction = final close vs. close at candle 28.
+40 candles per round. First **28** shown during the guess phase; the remaining 12 are the
+reveal. Direction = final close vs. close at candle 28.
+
+**Real market history** (since 2026-09-04). `server/src/marketData.js` keeps a pool of 8 batches
+of 1000 real candles (BTC/ETH/SOL/BNB/XRP/ADA on 15m/1h/4h, sampled from 2019 onwards) and each
+round replays a random 40-candle window. The outcome already happened, which is what lets a round
+resolve in 10s. Two rules:
+
+- **Only the server talks to the exchange.** The client never does, so a player's network or
+  location is irrelevant. (The owner's machine cannot reach Binance at all — it geo-blocks Iran.)
+- **The instrument and date are withheld until the round resolves.** `publicState()` sends
+  `chartMeta: null` while phase is `guess`; naming it earlier would hand over the answer.
+
+If the feed is unreachable, `generateSyntheticChart()` (the old random walk from 100) stands in so
+a match never fails for want of data. **Do not delete it.**
 
 ### Scoring (per round)
 | Call | Result |
