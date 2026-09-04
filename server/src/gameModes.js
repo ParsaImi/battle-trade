@@ -23,6 +23,10 @@ export const MODES = {
     resultsMs: 2_600,
     botAccuracy: 0.5,
     affectsStreak: true,
+    // The one mode that looks for a real opponent first. Gauntlet is a
+    // scripted AI ladder by design, Survival and Blitz are solo, and High
+    // Stakes would need a zero-sum wager rule before it can be PvP.
+    pvp: true,
   },
 
   survival: {
@@ -113,6 +117,7 @@ export function publicModeList() {
       tagline: m.tagline,
       icon: m.icon,
       solo: !!m.solo,
+      pvp: !!m.pvp,
       wager: !!m.wager,
       wagerOptions: m.wagerOptions ?? null,
     };

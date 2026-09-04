@@ -50,6 +50,8 @@ function RoundResultText({ outcome, opponentName, nearMiss, solo }) {
 }
 
 export default function MatchView({ match, you, opponent, onGuess, onLeave, onPlayAgain, remaining }) {
+  // Server-supplied opponent profile. Solo modes send none.
+  const oppName = opponent?.nickname ?? 'Opponent';
   const [autoReturn, setAutoReturn] = useState(null);
   const [chatter, setChatter] = useState(null);
   const wasCompleteRef = useRef(false);
@@ -147,7 +149,7 @@ export default function MatchView({ match, you, opponent, onGuess, onLeave, onPl
     let title = OUTCOME_TITLE[outcome];
     let scoreLine = (
       <>
-        You {playerScore} — {botScore} {opponent.name}
+        You {playerScore} — {botScore} {oppName}
       </>
     );
 
@@ -277,11 +279,17 @@ export default function MatchView({ match, you, opponent, onGuess, onLeave, onPl
             </div>
             <div className="matchup-vs">VS</div>
             <div className={`matchup-side ${oppLeading ? 'leading' : ''}`}>
-              <div className="matchup-avatar"><Avatar id={opponent.avatar} /></div>
+              <div className="matchup-avatar"><Avatar id={opponent?.avatar} /></div>
               <span className="matchup-name">
-                {match.mode === 'gauntlet' ? match.stageName : opponent.name}
+                {match.mode === 'gauntlet' ? match.stageName : oppName}
               </span>
+              {/* Only a real person is badged. A bot is shown as an ordinary
+                  trader and is never labelled live. Sits outside
+                  .matchup-name, which clips its overflow. */}
+              {match.pvp && <span className="live-badge">LIVE</span>}
               <span className="matchup-score">{theirScore}</span>
+              {/* Their call is in, but not what it was. */}
+              {match.opponentLockedIn && <span className="locked-in">Locked in</span>}
             </div>
           </div>
         )}
@@ -323,7 +331,7 @@ export default function MatchView({ match, you, opponent, onGuess, onLeave, onPl
           {match.phase === 'results' && match.roundOutcome && (
             <RoundResultText
               outcome={match.roundOutcome}
-              opponentName={match.solo ? 'The chart' : opponent.name}
+              opponentName={match.solo ? 'The chart' : oppName}
               nearMiss={nearMiss}
               solo={match.solo}
             />

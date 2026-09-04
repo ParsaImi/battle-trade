@@ -25,6 +25,9 @@ export function useGameSocket(guestId, nickname) {
   const [quests, setQuests] = useState([]);
   const [modes, setModes] = useState([]);
   const [match, setMatch] = useState(null);
+  // Server-driven matchmaking: { status: 'searching' | 'found', ... }.
+  // null means we are not looking for a match.
+  const [search, setSearch] = useState(null);
   const [connected, setConnected] = useState(false);
   const [everConnected, setEverConnected] = useState(false);
   const [dailyBonus, setDailyBonus] = useState(null);
@@ -56,7 +59,18 @@ export function useGameSocket(guestId, nickname) {
           if (msg.quests) setQuests(msg.quests);
           if (msg.modes) setModes(msg.modes);
         } else if (msg.type === 'match') {
+          // The match is live, so the matchmaking screen is done.
+          setSearch(null);
           setMatch(msg.match);
+        } else if (msg.type === 'matchmaking') {
+          if (msg.status === 'cancelled') {
+            setSearch(null);
+            if (msg.reason === 'opponent_left') {
+              setNotice({ kind: 'bad', text: 'Your opponent left before the match started.', key: Date.now() });
+            }
+          } else {
+            setSearch(msg);
+          }
         } else if (msg.type === 'registered') {
           if (msg.dailyBonus > 0) setDailyBonus(msg.dailyBonus);
         } else if (msg.type === 'purchase') {
@@ -79,6 +93,9 @@ export function useGameSocket(guestId, nickname) {
       socket.onclose = () => {
         if (cancelled) return;
         setConnected(false);
+        // The queue lives on the server and does not survive the socket,
+        // so stop pretending we are still searching.
+        setSearch(null);
         setTimeout(connect, 1500);
       };
     };
@@ -98,6 +115,7 @@ export function useGameSocket(guestId, nickname) {
     quests,
     modes,
     match,
+    search,
     connected,
     everConnected,
     dailyBonus,
@@ -109,9 +127,14 @@ export function useGameSocket(guestId, nickname) {
     buyAvatar: (avatar) => send({ type: 'buy_avatar', avatar }),
     claimQuest: (questId) => send({ type: 'claim_quest', questId }),
     renameNickname: (name) => send({ type: 'set_nickname', nickname: name }),
-    startMatch: (mode = 'classic', wager = 0) => send({ type: 'start_match', mode, wager }),
+    findMatch: (mode = 'classic', wager = 0) => send({ type: 'find_match', mode, wager }),
+    cancelSearch: () => {
+      setSearch(null);
+      send({ type: 'cancel_match' });
+    },
     submitGuess: (direction) => send({ type: 'match_guess', direction }),
     leaveMatch: () => {
+      setSearch(null);
       setMatch(null);
       send({ type: 'leave_match' });
     },

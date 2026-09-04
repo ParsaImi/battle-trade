@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node test/hardening.mjs"
+    "test": "node test/hardening.mjs && node test/pvp.mjs",
+    "test:pvp": "node test/pvp.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",

@@ -7,6 +7,8 @@ import { nanoid } from 'nanoid';
 
 import { Match } from './match.js';
 import { getMode, publicModeList } from './gameModes.js';
+import { makeBotOpponent, opponentFromProfile } from './opponents.js';
+import * as matchmaking from './matchmaking.js';
 import { log } from './logger.js';
 import * as store from './store.js';
 
@@ -20,6 +22,9 @@ const HEARTBEAT_MS = 30_000;
 const RATE_BURST = 30;
 const RATE_REFILL_PER_SEC = 12;
 const START_MATCH_COOLDOWN_MS = 750;
+// The VS card and 3/2/1 countdown between "opponent found" and round one.
+// The server owns this so both sides of a PvP match start the same instant.
+const PREMATCH_MS = Number(process.env.PREMATCH_MS) || 3_600;
 
 store.load();
 
@@ -31,6 +36,9 @@ const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_PAYLOAD_BYTES });
 
 const sockets = new Map(); // ws -> { guestId, match, tokens, lastRefill, lastStart, alive }
+// guestId -> ws, so a PvP match can reach both of its players. A second
+// connection for the same guest (another tab) replaces the first here.
+const socketByGuest = new Map();
 const startedAt = Date.now();
 
 function send(ws, payload) {
@@ -52,9 +60,6 @@ function sendLobby(ws, guestId) {
   });
 }
 
-function sendMatch(ws, match) {
-  send(ws, { type: 'match', match: match.publicState() });
-}
 
 // Refills the bucket based on elapsed time and spends one token.
 // Returns false when the connection is over its budget.
@@ -68,6 +73,129 @@ function allowMessage(meta) {
   return true;
 }
 
+// Sends every seated player their own view of the match. A PvP pair get
+// different frames from the same object: publicState() flips the scoreline so
+// each reads their own score as "yours".
+function broadcastMatch(match) {
+  for (const guestId of match.participants) {
+    if (match.mutedViewers.has(guestId)) continue;
+    const target = socketByGuest.get(guestId);
+    if (!target) continue;
+    send(target, { type: 'match', match: match.publicState(guestId) });
+    if (match.phase === 'complete') sendLobby(target, guestId);
+  }
+}
+
+// Announce the opponent, then start the match once both clients have had the
+// countdown. The opponent identity is decided HERE — including the AI's — so
+// the face on the "found" card is the one actually played against.
+function beginMatch(entries) {
+  const mode = getMode(entries[0].mode);
+  const pvp = entries.length === 2;
+  const startsAt = Date.now() + PREMATCH_MS;
+
+  const profiles = entries.map((e) => opponentFromProfile(store.getGuestPublic(e.guestId)));
+  const botIdentity = !pvp && !mode.solo ? makeBotOpponent() : null;
+
+  entries.forEach((entry, i) => {
+    send(entry.ws, {
+      type: 'matchmaking',
+      status: 'found',
+      pvp,
+      opponent: pvp ? profiles[1 - i] : botIdentity,
+      startsAt,
+    });
+  });
+
+  const timer = setTimeout(() => {
+    // If anyone dropped during the countdown, cancel for everyone left and
+    // give back any wager they had already staked.
+    const alive = entries.filter((e) => e.ws.readyState === e.ws.OPEN);
+    if (alive.length !== entries.length) {
+      for (const e of alive) {
+        const m = sockets.get(e.ws);
+        if (m) m.pendingStart = null;
+        if (e.wager > 0) store.refundWager(e.guestId, e.wager);
+        send(e.ws, { type: 'matchmaking', status: 'cancelled', reason: 'opponent_left' });
+        sendLobby(e.ws, e.guestId);
+      }
+      return;
+    }
+    createMatch(entries, pvp ? profiles[1] : botIdentity);
+  }, PREMATCH_MS);
+
+  for (const e of entries) {
+    const m = sockets.get(e.ws);
+    if (m) m.pendingStart = timer;
+  }
+}
+
+function createMatch(entries, opponentIdentity) {
+  const [creator] = entries;
+  const mode = getMode(creator.mode);
+
+  let match;
+  try {
+    // `match` is deliberately read inside the callback rather than captured:
+    // the constructor runs its first phase silently, so onChange cannot fire
+    // before this assignment completes (HANDOFF section 10).
+    match = new Match(creator.guestId, () => broadcastMatch(match), {
+      mode: mode.id,
+      wager: creator.wager,
+      opponent: opponentIdentity,
+    });
+  } catch (err) {
+    log.error('failed to start match', err);
+    for (const e of entries) {
+      const m = sockets.get(e.ws);
+      if (m) m.pendingStart = null;
+      // Never swallow a player's wager because the match failed to build.
+      if (e.wager > 0) store.refundWager(e.guestId, e.wager);
+      send(e.ws, { type: 'match_error', reason: 'start_failed' });
+      sendLobby(e.ws, e.guestId);
+    }
+    return;
+  }
+
+  for (const e of entries) {
+    const m = sockets.get(e.ws);
+    if (!m) continue;
+    m.pendingStart = null;
+    m.match = match;
+  }
+  broadcastMatch(match);
+}
+
+// Leave the queue and abandon any match still counting down. Used by an
+// explicit cancel, by leave_match, and by a dropped socket.
+function abandonSearch(meta) {
+  if (meta.guestId) {
+    const queued = matchmaking.leave(meta.guestId);
+    if (queued && queued.wager > 0) store.refundWager(meta.guestId, queued.wager);
+  }
+  if (meta.pendingStart) {
+    clearTimeout(meta.pendingStart);
+    meta.pendingStart = null;
+  }
+}
+
+// Detach a player from their match. A PvP match still in progress is
+// forfeited so the other player gets a result instead of hanging on a match
+// that will never advance.
+function releaseMatch(meta) {
+  const match = meta.match;
+  meta.match = null;
+  if (!match) return;
+  if (match.isPvp && match.phase !== 'complete') {
+    // Mute the leaver: they chose to walk out, so they belong in the lobby,
+    // not on the completion screen.
+    match.mutedViewers.add(meta.guestId);
+    match.forfeit(meta.guestId);
+    return;
+  }
+  match.destroy();
+}
+
 function handleMessage(ws, meta, msg) {
   if (msg.type === 'register') {
     const guestId =
@@ -78,6 +206,9 @@ function handleMessage(ws, meta, msg) {
     store.getOrCreateGuest(guestId, nickname);
     const bonus = store.applyDailyBonusIfNeeded(guestId);
     meta.guestId = guestId;
+    // A reconnect (or a second tab) takes over the mapping so match frames
+    // follow the live socket.
+    socketByGuest.set(guestId, ws);
     send(ws, { type: 'registered', guestId, dailyBonus: bonus });
     sendLobby(ws, guestId);
     return;
@@ -116,11 +247,18 @@ function handleMessage(ws, meta, msg) {
       return;
     }
 
+    // 'start_match' is the old name for this. A client loaded before the PvP
+    // update still sends it, and gets the same behaviour.
+    case 'find_match':
     case 'start_match': {
       // Cheap guard against a client hammering match creation.
       const now = Date.now();
       if (now - meta.lastStart < START_MATCH_COOLDOWN_MS) return;
       meta.lastStart = now;
+
+      // Clear out anything already running before starting something new.
+      abandonSearch(meta);
+      releaseMatch(meta);
 
       const mode = getMode(msg.mode);
 
@@ -141,36 +279,44 @@ function handleMessage(ws, meta, msg) {
         sendLobby(ws, meta.guestId);
       }
 
-      meta.match?.destroy();
-      meta.match = null;
-      try {
-        meta.match = new Match(
-          meta.guestId,
-          () => {
-            sendMatch(ws, meta.match);
-            if (meta.match.phase === 'complete') sendLobby(ws, meta.guestId);
-          },
-          { mode: mode.id, wager },
-        );
-      } catch (err) {
-        // Never swallow a player's wager because the match failed to build.
-        if (wager > 0) store.refundWager(meta.guestId, wager);
-        log.error('failed to start match', err);
-        send(ws, { type: 'match_error', reason: 'start_failed' });
-        sendLobby(ws, meta.guestId);
+      const entry = { guestId: meta.guestId, ws, mode: mode.id, wager };
+
+      // A PvP mode looks for a real opponent first, and only falls back to
+      // the AI once the full wait has elapsed with nobody found.
+      if (mode.pvp) {
+        const state = matchmaking.join(entry, {
+          onPair: (a, b) => beginMatch([a, b]),
+          onTimeout: (alone) => beginMatch([alone]),
+        });
+        if (state === 'waiting') {
+          send(ws, {
+            type: 'matchmaking',
+            status: 'searching',
+            waitMs: matchmaking.WAIT_MS,
+            startedAt: Date.now(),
+          });
+        }
         return;
       }
-      sendMatch(ws, meta.match);
+
+      // Solo and scripted-AI modes start straight away.
+      beginMatch([entry]);
       return;
     }
 
+    case 'cancel_match':
+      abandonSearch(meta);
+      send(ws, { type: 'matchmaking', status: 'cancelled', reason: 'you_cancelled' });
+      sendLobby(ws, meta.guestId);
+      return;
+
     case 'match_guess':
-      meta.match?.submitGuess(msg.direction);
+      meta.match?.submitGuess(msg.direction, meta.guestId);
       return;
 
     case 'leave_match':
-      meta.match?.destroy();
-      meta.match = null;
+      abandonSearch(meta);
+      releaseMatch(meta);
       sendLobby(ws, meta.guestId);
       return;
 
@@ -179,10 +325,22 @@ function handleMessage(ws, meta, msg) {
   }
 }
 
+// A socket is going away: take the player out of the queue, forfeit any PvP
+// match so the opponent is not left waiting on a player who will never call,
+// and release the guest -> socket mapping.
+function dropSocket(ws, meta) {
+  abandonSearch(meta);
+  releaseMatch(meta);
+  if (meta.guestId && socketByGuest.get(meta.guestId) === ws) socketByGuest.delete(meta.guestId);
+  sockets.delete(ws);
+}
+
 wss.on('connection', (ws) => {
   const meta = {
     guestId: null,
     match: null,
+    // Timer for a match that has been announced but not started yet.
+    pendingStart: null,
     tokens: RATE_BURST,
     lastRefill: Date.now(),
     lastStart: 0,
@@ -219,10 +377,7 @@ wss.on('connection', (ws) => {
 
   ws.on('error', (err) => log.warn('socket error', err.message));
 
-  ws.on('close', () => {
-    meta.match?.destroy();
-    sockets.delete(ws);
-  });
+  ws.on('close', () => dropSocket(ws, meta));
 });
 
 // Drops connections that stopped answering, which also clears their match
@@ -230,8 +385,7 @@ wss.on('connection', (ws) => {
 const heartbeat = setInterval(() => {
   for (const [ws, meta] of sockets) {
     if (!meta.alive) {
-      meta.match?.destroy();
-      sockets.delete(ws);
+      dropSocket(ws, meta);
       ws.terminate();
       continue;
     }
@@ -249,6 +403,7 @@ app.get('/health', (_req, res) => {
     ok: true,
     uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     connections: sockets.size,
+    queued: matchmaking.queueSize(),
     players: store.playerCount(),
   });
 });

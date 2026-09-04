@@ -35,3 +35,6 @@ Thumbs.db
 *.sw?
 server/data.json.bak
 server/data.json.tmp
+
+# PvP test scratch data
+server/test/.tmp-pvp/

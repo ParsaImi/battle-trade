@@ -10,7 +10,6 @@ import { MODE_BY_ID } from './components/gameModes';
 import Toast from './components/Toast';
 import Confetti from './components/Confetti';
 import BrandLogo from './components/BrandLogo';
-import { pickOpponent } from './components/bot';
 import { playCorrect, playWrong, playWin, playLose } from './lib/sound';
 import './App.css';
 
@@ -69,6 +68,7 @@ export default function App() {
     quests,
     modes,
     match,
+    search,
     connected,
     everConnected,
     dailyBonus,
@@ -80,16 +80,14 @@ export default function App() {
     buyAvatar,
     claimQuest,
     renameNickname,
-    startMatch,
+    findMatch,
+    cancelSearch,
     submitGuess,
     leaveMatch,
   } = useGameSocket(guestId, nickname);
   const remaining = useCountdown(match?.phaseEndsAt);
-  const [entering, setEntering] = useState(false);
-  const [opponent, setOpponent] = useState(pickOpponent);
   const [selectedMode, setSelectedMode] = useState('classic');
   const [wagerOpen, setWagerOpen] = useState(false);
-  const [pendingWager, setPendingWager] = useState(0);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
   const [flash, setFlash] = useState(null);
   const [confettiKey, setConfettiKey] = useState(null);
@@ -207,36 +205,28 @@ export default function App() {
 
   const activeMode = MODE_BY_ID[selectedMode] ?? MODE_BY_ID.classic;
 
+  // The server runs matchmaking: it queues us for a real opponent, then
+  // announces who we are facing. Nothing starts locally any more.
   const handlePlay = () => {
     // High Stakes needs a wager chosen before the match can start.
     if (activeMode.wager) {
       setWagerOpen(true);
       return;
     }
-    setPendingWager(0);
-    setOpponent(pickOpponent());
-    setEntering(true);
+    findMatch(selectedMode, 0);
   };
 
   const handleWagerConfirm = (amount) => {
     setWagerOpen(false);
-    setPendingWager(amount);
-    setOpponent(pickOpponent());
-    setEntering(true);
-  };
-
-  const handleEnterDone = () => {
-    setEntering(false);
-    startMatch(selectedMode, pendingWager);
+    findMatch(selectedMode, amount);
   };
 
   const handlePlayAgain = () => {
-    setOpponent(pickOpponent());
     if (activeMode.wager) {
       setWagerOpen(true);
       return;
     }
-    startMatch(selectedMode, 0);
+    findMatch(selectedMode, 0);
   };
 
   const matchInProgress = match && match.phase !== 'complete';
@@ -282,18 +272,18 @@ export default function App() {
       <Toast text={dailyBonus ? `+${dailyBonus} daily login bonus!` : null} toastKey={dailyBonus} />
       <Toast text={toast?.text} toastKey={toast?.key} kind={toast?.kind} offset={dailyBonus ? 52 : 0} />
 
-      {entering ? (
+      {search ? (
         <Matchmaking
-          avatar={you?.avatar || 'bull'}
+          search={search}
+          avatar={you?.avatar || 'nomad'}
           nickname={you?.nickname || nickname}
-          opponent={opponent}
-          onDone={handleEnterDone}
+          onCancel={cancelSearch}
         />
       ) : match ? (
         <MatchView
           match={match}
           you={you}
-          opponent={opponent}
+          opponent={match.opponent}
           onGuess={submitGuess}
           onLeave={requestLeave}
           onPlayAgain={handlePlayAgain}

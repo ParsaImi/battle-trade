@@ -7,8 +7,9 @@ export const MODE_LIST = [
     name: 'Classic 1v1',
     tagline: 'Best of 3, win by 2',
     icon: '⚔️',
-    blurb: 'Head-to-head against a rival. First to lead by two takes it.',
+    blurb: 'Head-to-head against a real player when one is around. First to lead by two takes it.',
     solo: false,
+    pvp: true,
     wager: false,
   },
   {
