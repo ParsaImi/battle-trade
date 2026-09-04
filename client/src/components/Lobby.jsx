@@ -109,9 +109,8 @@ export default function Lobby({
         </div>
 
         <section className="player-hero">
-          {/* The portrait itself is the control — tapping your own face to
-              change it is the thing people try first. The pencil stays as a
-              visible affordance and opens the same picker. */}
+          {/* Tap your own face to change it. No badge on top of it — the
+              portrait is the control. */}
           <div className="avatar-block">
             <button
               type="button"
@@ -120,15 +119,6 @@ export default function Lobby({
               aria-label="Change avatar"
             >
               <Avatar id={avatar} />
-            </button>
-            <button
-              type="button"
-              className="avatar-edit"
-              onClick={() => setPickerOpen(true)}
-              aria-hidden="true"
-              tabIndex={-1}
-            >
-              ✎
             </button>
           </div>
 
