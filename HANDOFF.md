@@ -40,6 +40,9 @@ cd battle-trade/client && npm install && npm run dev
 
 Backend tests: `cd server && npm test` (11 checks, see §9).
 
+**Deployed:** <http://194.5.97.185/> — Docker Compose on an Ubuntu VPS, one public port.
+See `DEPLOY.md` for the runbook (build, update, back up player data, logs).
+
 Env vars (server): `PORT`, `HOST`, `ALLOWED_ORIGINS`.
 Env vars (client): `VITE_WS_URL`, `VITE_WS_PORT` — normally unnecessary; the client derives the
 WebSocket host from the page URL.
@@ -200,8 +203,10 @@ responsive, bottom nav bar, modals for shop/quests/profile/settings/rules, first
    Current code still renders plain numbers in `.mm-countdown-number`. Either finish or revert.
 2. **Replace the placeholder Discord link** — `client/src/components/SettingsModal.jsx` has
    `https://discord.gg/replace-with-your-invite`. It's live on a public repo.
-3. **Deployment.** Nothing is deployed. Needs a host for the WS server (Render/Fly/Railway) and a
-   static host for the client, plus `VITE_WS_URL` pointed at the deployed backend.
+3. ~~**Deployment.**~~ **DONE (2026-09-04).** Live on an Ubuntu VPS at <http://194.5.97.185/> via
+   Docker Compose. nginx serves the built client and reverse-proxies the WebSocket at `/ws` on the
+   same origin, so the whole game runs on **one public port** — no CORS, and `wss://` will work
+   unchanged once TLS is added. Runbook: `DEPLOY.md`. `VITE_WS_URL` is deliberately left empty.
 4. **`data.json` won't scale.** Whole-file rewrite on every save, entire dataset in memory. Fine
    for tens of players; replace with SQLite (better-sqlite3) before real traffic.
 
@@ -266,6 +271,11 @@ touching its classes** — App.css is ~2900 lines and later rules silently win.
 ineffective on Windows**. Local durability comes from atomic writes + the short debounce. The test
 is explicitly skipped on win32 rather than left as a misleading pass.
 
+> **Now confirmed working in Docker (2026-09-04).** `docker compose stop` produces
+> `SIGTERM received — flushing player data` in the server log, and player data survived a full
+> `down`/`up` cycle. The Linux path was correct all along — it was only ever unverifiable on
+> Windows. `init: true` in compose is what forwards the signal to node.
+
 **PowerShell reports success as failure.**
 Redirecting a native command's stderr (`2>&1`) wraps output in an ErrorRecord and sets `$?` false
 even on exit code 0. `git push` writes progress to stderr, so a successful push *looks* like a red
@@ -292,6 +302,14 @@ purchases* (`wolf` → `trader`). Verified against real save data before shippin
 **The in-app browser sandbox blocks non-localhost WebSockets.**
 LAN testing failed in the preview pane but worked from a Node client. Don't trust a preview-pane
 network failure as an app bug.
+
+**Some networks silently eat WebSocket upgrades (hit this during the deploy).**
+After going live, `curl` from the dev machine to `http://194.5.97.185/ws` hung with **0 bytes**
+received, while the identical request from the VPS itself returned `101 Switching Protocols`.
+The giveaway: nginx's own access log showed `"GET /ws HTTP/1.1" 101` *for the dev machine's IP* —
+the server answered correctly and the response was dropped in transit. Plain HTTP to the same
+host was fine, so it is not a firewall or a port problem. **Check the server's access log before
+blaming the app**, and confirm from a second network (a phone on mobile data).
 
 **Automated UI testing races real game timers.**
 Tool round-trips often exceed a 10s guess phase, so matches finished between calls. Drive the game
@@ -333,16 +351,5 @@ drop files at `client/public/avatars/<id>.svg` (or update `src` in `avatars.js` 
 
 ## 12. Current git state
 
-Committed and pushed: everything up to the avatar image system.
-
-**Uncommitted** (backend hardening + LAN access):
-```
-M .gitignore                       (ignore data.json.bak/.tmp)
-M client/src/hooks/useGameSocket.js (derive WS host from page URL)
-M client/vite.config.js             (host: true)
-M server/package.json               (test script)
-M server/src/index.js               (hardening, 0.0.0.0 bind)
-M server/src/store.js               (atomic saves, refundWager)
-? server/src/logger.js
-? server/test/
-```
+Clean — everything committed and pushed to `origin/main`, including the backend hardening, LAN
+access, and the Docker Compose deployment.
