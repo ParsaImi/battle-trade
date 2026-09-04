@@ -28,24 +28,43 @@ export function useGameSocket(guestId, nickname) {
   // Server-driven matchmaking: { status: 'searching' | 'found', ... }.
   // null means we are not looking for a match.
   const [search, setSearch] = useState(null);
+  // Mirrors `search` for use inside socket callbacks, which close over the
+  // state value from the render that created them.
+  const searchRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const [everConnected, setEverConnected] = useState(false);
   const [dailyBonus, setDailyBonus] = useState(null);
   const [notice, setNotice] = useState(null);
   const wsRef = useRef(null);
 
+  // Always move both together, so callbacks can trust searchRef.
+  const applySearch = (value) => {
+    searchRef.current = value;
+    setSearch(value);
+  };
+
   useEffect(() => {
     if (!nickname) return;
 
     let cancelled = false;
     let socket;
+    let retry = null;
 
     const connect = () => {
+      // A retry scheduled before this effect was torn down must not open a
+      // socket afterwards: it would never register, never be closed, and just
+      // sit on the server until the heartbeat reaped it.
+      if (cancelled) return;
       socket = new WebSocket(WS_URL);
       wsRef.current = socket;
 
       socket.onopen = () => {
-        if (cancelled) return;
+        // Torn down while the handshake was in flight — close it rather than
+        // leaving a connected socket nobody owns.
+        if (cancelled) {
+          socket.close();
+          return;
+        }
         setConnected(true);
         setEverConnected(true);
         socket.send(JSON.stringify({ type: 'register', guestId, nickname }));
@@ -60,16 +79,16 @@ export function useGameSocket(guestId, nickname) {
           if (msg.modes) setModes(msg.modes);
         } else if (msg.type === 'match') {
           // The match is live, so the matchmaking screen is done.
-          setSearch(null);
+          applySearch(null);
           setMatch(msg.match);
         } else if (msg.type === 'matchmaking') {
           if (msg.status === 'cancelled') {
-            setSearch(null);
+            applySearch(null);
             if (msg.reason === 'opponent_left') {
               setNotice({ kind: 'bad', text: 'Your opponent left before the match started.', key: Date.now() });
             }
           } else {
-            setSearch(msg);
+            applySearch(msg);
           }
         } else if (msg.type === 'registered') {
           if (msg.dailyBonus > 0) setDailyBonus(msg.dailyBonus);
@@ -93,16 +112,27 @@ export function useGameSocket(guestId, nickname) {
       socket.onclose = () => {
         if (cancelled) return;
         setConnected(false);
-        // The queue lives on the server and does not survive the socket,
-        // so stop pretending we are still searching.
-        setSearch(null);
-        setTimeout(connect, 1500);
+        // The queue lives on the server and does not survive the socket, so
+        // stop pretending we are still searching — and say so, rather than
+        // dropping the player back to the lobby with no explanation.
+        if (searchRef.current) {
+          setNotice({
+            kind: 'bad',
+            text: 'Connection dropped — search cancelled. Tap Play to try again.',
+            key: Date.now(),
+          });
+        }
+        applySearch(null);
+        retry = setTimeout(connect, 1500);
       };
     };
 
     connect();
     return () => {
       cancelled = true;
+      // Without this the pending retry still fires and starts a second
+      // connection chain; repeated teardowns then stack up sockets.
+      clearTimeout(retry);
       socket?.close();
     };
   }, [guestId, nickname]);
@@ -129,12 +159,12 @@ export function useGameSocket(guestId, nickname) {
     renameNickname: (name) => send({ type: 'set_nickname', nickname: name }),
     findMatch: (mode = 'classic', wager = 0) => send({ type: 'find_match', mode, wager }),
     cancelSearch: () => {
-      setSearch(null);
+      applySearch(null);
       send({ type: 'cancel_match' });
     },
     submitGuess: (direction) => send({ type: 'match_guess', direction }),
     leaveMatch: () => {
-      setSearch(null);
+      applySearch(null);
       setMatch(null);
       send({ type: 'leave_match' });
     },

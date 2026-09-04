@@ -215,6 +215,33 @@ async function run() {
   ok(newFrames.length === 0, 'a cancelled search does not still fall back to a bot later');
   d.close();
 
+  // --- a stale socket must not cancel the live one's search -----------------
+  // Regression: a player commonly has more than one socket for the same
+  // guestId (a reconnect the server has not reaped yet, or a second tab).
+  // Removing the queue entry by guestId meant any of them closing silently
+  // cancelled the live search, and because the AI-fallback timer went with the
+  // entry the player waited forever. This is what "I press Play and nothing
+  // happens" looked like in production.
+  const live = await connect('pvp-storm-000000001', 'StormVictim');
+  await sleep(200);
+  live.send({ type: 'find_match', mode: 'classic' });
+  await waitFor(live, (f) => f.type === 'matchmaking' && f.status === 'searching', 4000, 'searching(live)');
+
+  const stale = await connect('pvp-storm-000000001', 'StormVictim');
+  await sleep(250);
+  stale.close();
+  await sleep(500);
+
+  const stillQueued = await (await fetch(`http://127.0.0.1:${PORT}/health`)).json();
+  ok(stillQueued.queued === 1,
+     `a stale socket closing leaves the live search in the queue (queued=${stillQueued.queued})`);
+
+  const stormFound = await waitFor(
+    live, (f) => f.type === 'matchmaking' && f.status === 'found', WAIT_MS + 6000, 'fallback after stale close');
+  ok(!!stormFound, 'the AI fallback still fires for the surviving socket');
+  live.close();
+  await sleep(200);
+
   // --- solo modes never queue -----------------------------------------------
   const e = await connect('pvp-blitz-0000000001', 'Blitzer');
   await sleep(200);

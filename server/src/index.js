@@ -168,10 +168,17 @@ function createMatch(entries, opponentIdentity) {
 
 // Leave the queue and abandon any match still counting down. Used by an
 // explicit cancel, by leave_match, and by a dropped socket.
-function abandonSearch(meta) {
-  if (meta.guestId) {
-    const queued = matchmaking.leave(meta.guestId);
-    if (queued && queued.wager > 0) store.refundWager(meta.guestId, queued.wager);
+//
+// Scoped to THIS socket, not to the guest. A player often has more than one
+// socket for the same guestId — a reconnect the server has not reaped yet, or
+// a second tab — and removing the queue entry by guestId meant a stale socket
+// closing silently cancelled the live socket's search. The player then sat on
+// the search screen forever: never paired, and never given the AI fallback,
+// because the timer went with the entry.
+function abandonSearch(meta, ws) {
+  const queued = matchmaking.leaveBySocket(ws);
+  if (queued && queued.wager > 0 && queued.guestId) {
+    store.refundWager(queued.guestId, queued.wager);
   }
   if (meta.pendingStart) {
     clearTimeout(meta.pendingStart);
@@ -257,7 +264,7 @@ function handleMessage(ws, meta, msg) {
       meta.lastStart = now;
 
       // Clear out anything already running before starting something new.
-      abandonSearch(meta);
+      abandonSearch(meta, ws);
       releaseMatch(meta);
 
       const mode = getMode(msg.mode);
@@ -305,7 +312,7 @@ function handleMessage(ws, meta, msg) {
     }
 
     case 'cancel_match':
-      abandonSearch(meta);
+      abandonSearch(meta, ws);
       send(ws, { type: 'matchmaking', status: 'cancelled', reason: 'you_cancelled' });
       sendLobby(ws, meta.guestId);
       return;
@@ -315,7 +322,7 @@ function handleMessage(ws, meta, msg) {
       return;
 
     case 'leave_match':
-      abandonSearch(meta);
+      abandonSearch(meta, ws);
       releaseMatch(meta);
       sendLobby(ws, meta.guestId);
       return;
@@ -329,7 +336,7 @@ function handleMessage(ws, meta, msg) {
 // match so the opponent is not left waiting on a player who will never call,
 // and release the guest -> socket mapping.
 function dropSocket(ws, meta) {
-  abandonSearch(meta);
+  abandonSearch(meta, ws);
   releaseMatch(meta);
   if (meta.guestId && socketByGuest.get(meta.guestId) === ws) socketByGuest.delete(meta.guestId);
   sockets.delete(ws);
@@ -385,6 +392,7 @@ wss.on('connection', (ws) => {
 const heartbeat = setInterval(() => {
   for (const [ws, meta] of sockets) {
     if (!meta.alive) {
+      log.warn(`heartbeat: dropping unresponsive socket${meta.guestId ? ` for ${meta.guestId}` : ''}`);
       dropSocket(ws, meta);
       ws.terminate();
       continue;
