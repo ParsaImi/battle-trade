@@ -38,12 +38,15 @@ cd battle-trade/client && npm install && npm run dev
 - **LAN / phone access:** both bind `0.0.0.0`. Open `http://<your-lan-ip>:5173` on a phone on the
   same Wi-Fi. The server logs its LAN addresses on startup.
 
-Backend tests: `cd server && npm test` (11 checks, see §9).
+Backend tests: `cd server && npm test` — 43 checks: `test/hardening.mjs` (11, see §9) and
+`test/pvp.mjs` (32, matchmaking and PvP). `npm run test:pvp` runs just the latter.
 
 **Deployed:** <http://194.5.97.185/> — Docker Compose on an Ubuntu VPS, one public port.
 See `DEPLOY.md` for the runbook (build, update, back up player data, logs).
 
-Env vars (server): `PORT`, `HOST`, `ALLOWED_ORIGINS`.
+Env vars (server): `PORT`, `HOST`, `ALLOWED_ORIGINS`, `DATA_DIR` (save directory — must be a
+directory, not the file), `MATCH_WAIT_MS` (queue wait before the AI fallback, default 30000),
+`PREMATCH_MS` (VS card + countdown, default 3600).
 Env vars (client): `VITE_WS_URL`, `VITE_WS_PORT` — normally unnecessary; the client derives the
 WebSocket host from the page URL.
 
@@ -62,6 +65,8 @@ battle-trade/
 │   │   ├── store.js            Player records, coins, stats, quests, persistence
 │   │   ├── gameData.js         Avatar catalog, quest pool, achievements, XP curve
 │   │   ├── gameModes.js        The 5 game mode definitions
+│   │   ├── matchmaking.js      PvP queue — pairs waiting players, 30s AI fallback
+│   │   ├── opponents.js        Server-owned opponent identity (AI and real players)
 │   │   └── logger.js           Timestamped logger
 │   ├── test/hardening.mjs      Backend abuse/durability test suite
 │   └── data.json               Player save file (gitignored; auto-created)
@@ -108,7 +113,7 @@ The opponent always calls Up/Down (never Hold) at its mode's accuracy.
 
 | Mode | Structure | Opponent | Payout |
 |---|---|---|---|
-| **Classic 1v1** ⚔️ | Min 3 rounds, then **win by 2** (volleyball rule), cap 11 | 50% | 80–120 × streak multiplier |
+| **Classic 1v1** ⚔️ | Min 3 rounds, then **win by 2** (volleyball rule), cap 11 | **a real player**, else 50% AI | 80–120 × streak multiplier |
 | **Survival** 💀 | Endless, sudden death. **Hold disabled.** Timeout = death | none (solo) | escalating: `10 + 5n` per round survived |
 | **Blitz** ⚡ | 60-second session clock, 4s per round | none (solo) | 25 × net points |
 | **High Stakes** 🎰 | Like Classic; wager 100/250/500/1000 up front | **58%** | win = 2× wager, draw = refund, loss = 0 |
@@ -135,9 +140,17 @@ Solo modes do **not** affect the win streak.
 ## 5. WebSocket protocol
 
 **Client → Server:** `register`, `set_avatar`, `set_title`, `set_nickname`, `buy_avatar`,
-`claim_quest`, `start_match`, `match_guess`, `leave_match`
+`claim_quest`, `find_match`, `cancel_match`, `match_guess`, `leave_match`
 
-**Server → Client:** `registered`, `lobby`, `match`, `purchase`, `quest_claimed`, `match_error`
+`start_match` is the old name for `find_match` and still works, so a client loaded before the PvP
+update keeps functioning.
+
+**Server → Client:** `registered`, `lobby`, `matchmaking`, `match`, `purchase`, `quest_claimed`,
+`match_error`
+
+`matchmaking` carries `{ status }`: `searching` (`waitMs`, `startedAt`), `found` (`opponent`,
+`startsAt`, `pvp`) or `cancelled` (`reason`). The server owns the pre-match countdown so both
+players in a PvP match start round one together.
 
 `lobby` carries `{ you, leaderboard, quests, modes }`. `match` carries the full public match state
 (phase, round, scores, candles, roundOutcome, matchResult).
@@ -211,12 +224,18 @@ responsive, bottom nav bar, modals for shop/quests/profile/settings/rules, first
    for tens of players; replace with SQLite (better-sqlite3) before real traffic.
 
 ### Medium
-5. **Real multiplayer.** Everything is vs. AI today. Real PvP needs matchmaking queues, shared
-   match state, and reconnect handling.
+5. ~~**Real multiplayer.**~~ **DONE for Classic 1v1 (2026-09-04).** A server-side queue pairs two
+   waiting players; after 30s with nobody found (`MATCH_WAIT_MS`) the player gets an AI opponent.
+   `Match` now has two seats and `publicState(viewerId)` renders it per player. Still open:
+   **reconnect** — a refresh mid-match forfeits rather than rejoining. Survival/Blitz are solo and
+   Gauntlet is a scripted AI ladder, so neither should be PvP; **High Stakes could be**, but needs
+   a zero-sum wager rule decided first (today the house pays the winner). The queue already keys
+   on wager, so enabling it is `pvp: true` in `gameModes.js` plus tests.
 6. **Anti-cheat.** Nothing stops opening two tabs with different guest ids. Fine for a casual
    game; matters if leaderboards become competitive.
-7. **Server-side opponent identity.** `bot.js` picks the opponent name/avatar client-side, so it
-   changes on refresh mid-match. Should come from the server with the match.
+7. ~~**Server-side opponent identity.**~~ **DONE.** `client/src/components/bot.js` is gone;
+   `server/src/opponents.js` decides the identity when the match is announced, so the "found" card
+   and the match always agree and it no longer changes on refresh.
 8. **Sound polish** — the brief mentioned layered "crowd reaction" on massive wins; currently
    approximated with oscillators. Real samples would be better.
 9. **More coin sinks** — only avatars today. Title unlocks, chart themes, emote packs.
@@ -310,6 +329,12 @@ The giveaway: nginx's own access log showed `"GET /ws HTTP/1.1" 101` *for the de
 the server answered correctly and the response was dropped in transit. Plain HTTP to the same
 host was fine, so it is not a firewall or a port problem. **Check the server's access log before
 blaming the app**, and confirm from a second network (a phone on mobile data).
+
+**Two browser tabs on the same host share a guest id.**
+The guest id lives in `localStorage`, which is per-origin — so two tabs on `localhost:5173` are
+the *same player*, and the queue refuses to pair a player with itself. To test PvP locally, open
+one tab on `http://localhost:5173` and the other on `http://127.0.0.1:5173`: different origins,
+separate storage, two real players.
 
 **Automated UI testing races real game timers.**
 Tool round-trips often exceed a 10s guess phase, so matches finished between calls. Drive the game
