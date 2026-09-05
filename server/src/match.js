@@ -451,6 +451,24 @@ export class Match {
     return true;
   }
 
+  // What the player is allowed to know about the chart, and when.
+  //
+  // The instrument and timeframe are shown from the start: knowing it is
+  // ADA/USDT on 15m tells you nothing about what the price does next, and
+  // reading a chart you cannot identify is a worse game.
+  //
+  // The DATE is the part that has to wait. Instrument + timeframe + date,
+  // against the prices already on screen, is enough to look the window up and
+  // find out what happened. That is the one field withheld until the calls
+  // are locked in.
+  _chartMetaFor(phase) {
+    const m = this.chartMeta;
+    if (!m) return null;
+    if (phase !== PHASES.GUESS) return m;
+    const { date, ...safe } = m;
+    return safe;
+  }
+
   publicState(viewerId = this.guestId) {
     const m = this.mode;
     const asOpponent = this.isPvp && viewerId === this.opponent.guestId;
@@ -521,7 +539,7 @@ export class Match {
       // which part is context and where the guess/reveal split falls.
       historyCount: this.history.length,
       // Only ever sent once the calls are locked in and the chart is revealed.
-      chartMeta: this.phase === PHASES.GUESS ? null : this.chartMeta,
+      chartMeta: this._chartMetaFor(this.phase),
       roundOutcome,
       matchResult: this.results[viewerId] ?? null,
     };

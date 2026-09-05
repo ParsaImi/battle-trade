@@ -211,19 +211,22 @@ export default function CandlestickChart({ candles, roundId, direction, chartMet
             {changePct >= 0 ? '▲' : '▼'} {Math.abs(changePct).toFixed(2)}%
           </span>
         </div>
-        {/* Naming the instrument mid-guess would hand over the answer, so the
-            server withholds it until the round resolves. */}
+        {/* Instrument and timeframe are shown from the start — you cannot read
+            a chart you are not allowed to identify. The DATE is the part the
+            server holds back until the calls are in, because instrument +
+            timeframe + date is enough to look the window up. */}
         {chartMeta?.real ? (
           <div className="chart-instrument">
             <span className="chart-symbol">{chartMeta.label}</span>
             <span className="chart-tf">
-              {chartMeta.interval} · {chartMeta.date}
+              {chartMeta.interval}
+              {chartMeta.date ? ` · ${chartMeta.date}` : ' · date after the call'}
             </span>
           </div>
         ) : (
           <div className="chart-instrument chart-instrument-hidden">
-            <span className="chart-symbol">? ? ?</span>
-            <span className="chart-tf">revealed after the call</span>
+            <span className="chart-symbol">Practice chart</span>
+            <span className="chart-tf">simulated</span>
           </div>
         )}
       </div>

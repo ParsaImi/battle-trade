@@ -112,8 +112,11 @@ resolve in 10s. Two rules:
   cannot reveal the future. **The invariant to protect** is that the guess phase sends exactly
   `historyCount + 28` candles and the reveal extends it to `historyCount + 40` — scrolling back
   must never become scrolling forward. There is a test for this in `test/pvp.mjs`.
-- **The instrument and date are withheld until the round resolves.** `publicState()` sends
-  `chartMeta: null` while phase is `guess`; naming it earlier would hand over the answer.
+- **The DATE is withheld until the round resolves** — and only the date. The instrument and
+  timeframe are shown from the start, because knowing it is ADA/USDT on 15m says nothing about
+  what happens next, and a chart you may not identify is a worse game. Instrument + timeframe +
+  **date** against the visible prices is what would let someone look the window up, so
+  `_chartMetaFor()` strips `date` while the phase is `guess`. Tested in `test/pvp.mjs`.
 
 If the feed is unreachable, `generateSyntheticChart()` (the old random walk from 100) stands in so
 a match never fails for want of data. **Do not delete it.**

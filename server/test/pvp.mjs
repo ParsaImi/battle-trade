@@ -531,6 +531,26 @@ async function run() {
     JSON.stringify(gFrame.candles) === JSON.stringify(rFrame.candles.slice(0, gFrame.candles.length)),
     'the revealed chart extends the guess-phase chart rather than replacing it',
   );
+
+  // --- what the chart is allowed to tell you, and when ----------------------
+  // Instrument and timeframe are shown from the start: knowing it is ADA/USDT
+  // on 15m says nothing about what happens next, and an unidentifiable chart
+  // is a worse game. The DATE waits, because instrument + timeframe + date
+  // against the visible prices is enough to look the window up.
+  if (gFrame.chartMeta && gFrame.chartMeta.real) {
+    ok(!!gFrame.chartMeta.label && !!gFrame.chartMeta.interval,
+       'the guess phase names the instrument and timeframe (' + gFrame.chartMeta.label + ' ' + gFrame.chartMeta.interval + ')');
+    ok(gFrame.chartMeta.date === undefined,
+       'but never the date, which is the part that makes it findable');
+    ok(!!rFrame.chartMeta && !!rFrame.chartMeta.date,
+       'the date arrives once the calls are locked in (' + rFrame.chartMeta?.date + ')');
+  } else {
+    // No live feed in this environment, so the round fell back to a simulated
+    // chart. Assert the fallback is labelled as such rather than skipping.
+    ok(gFrame.chartMeta === null || gFrame.chartMeta.real === false,
+       'a simulated fallback chart is flagged real=false, not passed off as market data');
+  }
+
   chart.close();
   await sleep(200);
 
