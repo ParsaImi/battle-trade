@@ -31,6 +31,9 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
   // Username when signed in, null when playing as a guest.
   const [account, setAccount] = useState(null);
   const [authError, setAuthError] = useState(null);
+  // Private room the player is hosting, plus the last room-related error.
+  const [room, setRoom] = useState(null);
+  const [roomError, setRoomError] = useState(null);
   const [authBusy, setAuthBusy] = useState(false);
   // Reactions the opponent has sent us, drained by the match view.
   const [incomingEmote, setIncomingEmote] = useState(null);
@@ -110,11 +113,21 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
           if (msg.quests) setQuests(msg.quests);
           if (msg.modes) setModes(msg.modes);
         } else if (msg.type === 'match') {
-          // The match is live, so the matchmaking screen is done.
+          // The match is live, so the matchmaking screen and any open room
+          // are done.
           applySearch(null);
+          setRoom(null);
           setMatch(msg.match);
         } else if (msg.type === 'emote') {
           setIncomingEmote({ emoji: msg.emoji, key: `${Date.now()}-${Math.random()}` });
+        } else if (msg.type === 'room') {
+          if (msg.ok) {
+            setRoomError(null);
+            setRoom(msg.status === 'waiting' ? msg : null);
+          } else {
+            setRoom(null);
+            setRoomError(roomMessage(msg.reason));
+          }
         } else if (msg.type === 'matchmaking') {
           if (msg.status === 'cancelled') {
             applySearch(null);
@@ -247,6 +260,21 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
     },
     logout: () => send({ type: 'logout', token: tokenRef.current }),
     findMatch: (mode = 'classic', wager = 0) => send({ type: 'find_match', mode, wager }),
+    room,
+    roomError,
+    clearRoomError: () => setRoomError(null),
+    createRoom: (mode, wager = 0) => {
+      setRoomError(null);
+      send({ type: 'create_room', mode, wager });
+    },
+    joinRoom: (code) => {
+      setRoomError(null);
+      send({ type: 'join_room', code });
+    },
+    leaveRoom: () => {
+      setRoom(null);
+      send({ type: 'leave_room' });
+    },
     playWithAi: () => send({ type: 'play_ai' }),
     cancelSearch: () => {
       applySearch(null);
@@ -259,6 +287,27 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
       send({ type: 'leave_match' });
     },
   };
+}
+
+function roomMessage(reason) {
+  switch (reason) {
+    case 'room_not_found':
+      return "No room with that code. Check it and try again.";
+    case 'own_room':
+      return "That's your own room — send the code to a friend.";
+    case 'host_left':
+      return 'That room was closed by whoever made it.';
+    case 'expired':
+      return 'Your room expired before anyone joined.';
+    case 'not_enough_coins':
+      return "You can't cover that stake.";
+    case 'bad_wager':
+      return 'Pick one of the offered stakes.';
+    case 'bad_mode':
+      return "That mode can't be played in a room.";
+    default:
+      return "That didn't work. Try again.";
+  }
 }
 
 function authMessage(msg) {

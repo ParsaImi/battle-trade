@@ -53,6 +53,16 @@ export const MODE_LIST = [
     pvp: true,
     wager: false,
   },
+  {
+    id: 'custom',
+    name: 'Custom Room',
+    tagline: 'Play a friend with a code',
+    icon: '🎟️',
+    blurb: 'Make a room, send the code, and play whichever mode you like against a friend.',
+    solo: false,
+    room: true,
+    wager: false,
+  },
 ];
 
 export const MODE_BY_ID = Object.fromEntries(MODE_LIST.map((m) => [m.id, m]));

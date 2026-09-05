@@ -9,6 +9,7 @@ import { Match } from './match.js';
 import { getMode, publicModeList } from './gameModes.js';
 import { makeBotOpponent, opponentFromProfile } from './opponents.js';
 import * as matchmaking from './matchmaking.js';
+import * as rooms from './rooms.js';
 import * as marketData from './marketData.js';
 import { log } from './logger.js';
 import * as store from './store.js';
@@ -192,6 +193,10 @@ function createMatch(entries, opponentIdentity) {
 // the search screen forever: never paired, and never given the AI fallback,
 // because the timer went with the entry.
 function abandonSearch(meta, ws) {
+  // A room the player was hosting counts as a search too.
+  const hosted = rooms.closeBySocket(ws);
+  if (hosted && hosted.wager > 0) store.refundWager(hosted.guestId, hosted.wager);
+
   const queued = matchmaking.leaveBySocket(ws);
   if (queued && queued.wager > 0 && queued.guestId) {
     store.refundWager(queued.guestId, queued.wager);
@@ -372,6 +377,8 @@ function handleMessage(ws, meta, msg) {
       releaseMatch(meta);
 
       const mode = getMode(msg.mode);
+      // Custom is a room, not something you can queue for.
+      if (mode.room) return;
 
       // High Stakes takes the wager up front; refuse the match if the
       // player can't cover it or picked an amount that isn't on offer.
@@ -430,6 +437,104 @@ function handleMessage(ws, meta, msg) {
     // out of the queue and begins the match they would have got anyway once
     // the wait ran out: an AI rival, or a solo run in Survival and Blitz.
     // The wager is NOT refunded here, because the match is going ahead.
+    // --- private rooms ----------------------------------------------------
+    // A player opens a room, gets a short code, and whoever they send it to
+    // joins that exact match rather than the open queue.
+    case 'create_room': {
+      const now = Date.now();
+      if (now - meta.lastStart < START_MATCH_COOLDOWN_MS) return;
+      meta.lastStart = now;
+
+      abandonSearch(meta, ws);
+      releaseMatch(meta);
+
+      const mode = getMode(msg.mode);
+      // 'custom' is a lobby concept, not something Match can play.
+      if (mode.room) {
+        send(ws, { type: 'room', ok: false, reason: 'bad_mode' });
+        return;
+      }
+
+      let wager = 0;
+      if (mode.wager) {
+        wager = Number(msg.wager) || 0;
+        if (!mode.wagerOptions.includes(wager)) {
+          send(ws, { type: 'room', ok: false, reason: 'bad_wager' });
+          return;
+        }
+        if (!store.takeWager(meta.guestId, wager)) {
+          send(ws, { type: 'room', ok: false, reason: 'not_enough_coins' });
+          sendLobby(ws, meta.guestId);
+          return;
+        }
+        sendLobby(ws, meta.guestId);
+      }
+
+      const room = rooms.create({ guestId: meta.guestId, ws, mode: mode.id, wager }, (expired) => {
+        if (expired.wager > 0) store.refundWager(expired.guestId, expired.wager);
+        send(expired.ws, { type: 'room', ok: false, reason: 'expired' });
+        sendLobby(expired.ws, expired.guestId);
+      });
+
+      send(ws, {
+        type: 'room',
+        ok: true,
+        status: 'waiting',
+        code: room.code,
+        mode: mode.id,
+        modeName: mode.name,
+        wager,
+        expiresInSec: Math.round(rooms.ROOM_TTL_MS / 1000),
+      });
+      return;
+    }
+
+    case 'join_room': {
+      const now = Date.now();
+      if (now - meta.lastStart < START_MATCH_COOLDOWN_MS) return;
+      meta.lastStart = now;
+
+      const result = rooms.claim(msg.code, meta.guestId);
+      if (!result.ok) {
+        send(ws, { type: 'room', ok: false, reason: result.reason });
+        return;
+      }
+
+      const host = result.room;
+      const mode = getMode(host.mode);
+
+      // The joiner has to cover the same stake the host already put up.
+      let wager = 0;
+      if (mode.wager) {
+        wager = host.wager;
+        if (!store.takeWager(meta.guestId, wager)) {
+          // Hand the room back rather than eating the host's wager.
+          rooms.create({ guestId: host.guestId, ws: host.ws, mode: host.mode, wager: host.wager }, () => {});
+          send(ws, { type: 'room', ok: false, reason: 'not_enough_coins' });
+          sendLobby(ws, meta.guestId);
+          return;
+        }
+        sendLobby(ws, meta.guestId);
+      }
+
+      abandonSearch(meta, ws);
+      releaseMatch(meta);
+
+      beginMatch([
+        { guestId: host.guestId, ws: host.ws, mode: host.mode, wager: host.wager },
+        { guestId: meta.guestId, ws, mode: host.mode, wager },
+      ]);
+      return;
+    }
+
+    case 'leave_room': {
+      const closed = rooms.closeFor(meta.guestId);
+      if (closed && closed.wager > 0) store.refundWager(meta.guestId, closed.wager);
+      send(ws, { type: 'room', ok: true, status: 'closed' });
+      sendLobby(ws, meta.guestId);
+      return;
+    }
+
     case 'play_ai': {
       const entry = matchmaking.leaveBySocket(ws);
       // Not searching — nothing to skip. Ignore rather than starting a second
@@ -564,6 +669,7 @@ app.get('/health', (_req, res) => {
     uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     connections: sockets.size,
     marketBatches: marketData.poolSize(),
+    rooms: rooms.openCount(),
     accounts: accounts.accountCount(),
     queued: matchmaking.queueSize(),
     players: store.playerCount(),

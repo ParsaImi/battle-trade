@@ -3,8 +3,10 @@ import CandlestickChart from './CandlestickChart';
 import CoinIcon from './CoinIcon';
 import MarketChatter from './MarketChatter';
 import QuickEmotes from './QuickEmotes';
+import MatchResultFX from './MatchResultFX';
 import Avatar from './Avatar';
 import { playClick } from '../lib/sound';
+import { startMusic, stopMusic, setMusicIntensity } from '../lib/music';
 import { useKeyboardControls } from '../hooks/useKeyboardControls';
 
 const OUTCOME_TITLE = { win: 'You Win!', loss: 'You Lose', draw: 'Draw' };
@@ -70,6 +72,24 @@ export default function MatchView({
   // Starts (or restarts) an auto-return-to-lobby countdown the moment the
   // match lands on its complete screen — like a post-match lobby that
   // doesn't wait forever for you to click through.
+  // Music for the length of the match, and only the match — the lobby has
+  // its own ambient bed.
+  useEffect(() => {
+    startMusic();
+    return () => stopMusic();
+  }, []);
+
+  // Layers follow the round: calm while the result is on screen, playing
+  // during a call, and everything in once the clock is nearly out.
+  useEffect(() => {
+    if (!match) return;
+    if (match.phase !== 'guess') {
+      setMusicIntensity(0);
+      return;
+    }
+    setMusicIntensity(remaining <= 3 ? 2 : 1);
+  }, [match?.phase, remaining, match]);
+
   useEffect(() => {
     const isComplete = match?.phase === 'complete';
     if (isComplete && !wasCompleteRef.current) {
@@ -178,7 +198,10 @@ export default function MatchView({
     }
 
     return (
-      <div className="match-screen">
+      <div className="match-screen match-screen-complete">
+        {/* Sits behind the card: a win gets rays, a ring and sparks; a loss
+            gets the colour drained out and ash. */}
+        <MatchResultFX outcome={outcome} />
         <div className="match-complete-card">
           <span className="complete-mode-tag">
             {match.modeIcon} {r.modeName}

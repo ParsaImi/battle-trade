@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Modal from './Modal';
 import { useMuted } from '../hooks/useMuted';
+import { useMusic } from '../hooks/useMusic';
 import { useProMode } from '../hooks/useProMode';
 
 // TODO: swap in your real community link (Discord/Telegram/etc).
@@ -10,6 +11,7 @@ export default function SettingsModal({ nickname, onRename, account, onSignIn, o
   const [name, setName] = useState(nickname || '');
   const [saved, setSaved] = useState(false);
   const [muted, toggleMuted] = useMuted();
+  const [music, toggleMusic] = useMusic();
   const [proMode, toggleProMode] = useProMode();
 
   const handleSave = (e) => {
@@ -70,6 +72,21 @@ export default function SettingsModal({ nickname, onRename, account, onSignIn, o
           className={`toggle-switch ${muted ? '' : 'on'}`}
           onClick={() => toggleMuted(!muted)}
           aria-pressed={!muted}
+        >
+          <span className="toggle-knob" />
+        </button>
+      </div>
+
+      {/* Separate from the effects: plenty of people want the beeps and not
+          a soundtrack. Muting everything still silences both. */}
+      <div className="settings-row settings-toggle-row">
+        <span className="settings-label">Match music</span>
+        <button
+          type="button"
+          className={`toggle-switch ${music && !muted ? 'on' : ''}`}
+          onClick={() => toggleMusic(!music)}
+          aria-pressed={music}
+          disabled={muted}
         >
           <span className="toggle-knob" />
         </button>

@@ -56,8 +56,12 @@ else
   echo 'FORCE_HTTPS=1' >> .env
 fi
 
+# Force-recreate the web container: nginx only reads certificates at start,
+# and it was last started BEFORE this certificate existed. Without the force,
+# compose sees no config change and leaves the old certificate loaded.
 docker compose up -d
-sleep 5
+docker compose up -d --force-recreate web
+sleep 6
 echo
 echo "==> done. Verifying:"
 curl -sS -o /dev/null -w "    https://${TLS_HOST}/        HTTP %{http_code}  (cert verified: %{ssl_verify_result} — 0 is good)\n" "https://${TLS_HOST}/"

@@ -2,6 +2,8 @@
 // defensively since autoplay policies / unsupported browsers should never
 // crash the game, just play nothing.
 
+import { refreshMusicVolume } from './music';
+
 const MUTE_KEY = 'battle-trade:muted';
 
 let ctx = null;
@@ -21,6 +23,8 @@ export function isMuted() {
 export function setMuted(muted) {
   localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
   updateAmbientVolume();
+  // The match music has its own switch, but muting everything covers it too.
+  refreshMusicVolume();
 }
 
 function tone(freq, duration, { type = 'sine', gain = 0.15, delay = 0 } = {}) {

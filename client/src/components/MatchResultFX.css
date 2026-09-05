@@ -1,0 +1,192 @@
+/* End-of-match effects. Overlay only — never in the way of the buttons. */
+.result-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 3;
+}
+
+/* ---------------------------------------------------------------- winning */
+
+/* Slowly turning light behind the result card. */
+.fx-rays {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  width: 190vmax;
+  height: 190vmax;
+  transform: translate(-50%, -50%);
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(0, 229, 143, 0.13) 0deg 7deg,
+    transparent 7deg 22deg
+  );
+  animation: fx-rays-in 620ms ease-out both, fx-rays-spin 26s linear infinite;
+  opacity: 0;
+}
+
+@keyframes fx-rays-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes fx-rays-spin {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.fx-glow {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  width: 70vmax;
+  height: 70vmax;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(0, 229, 143, 0.3) 0%, transparent 62%);
+  animation: fx-glow-in 900ms ease-out both;
+}
+
+@keyframes fx-glow-in {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  40%  { opacity: 1; }
+  100% { opacity: 0.55; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* The impact ring. */
+.fx-shockwave {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  width: 60px;
+  height: 60px;
+  margin: -30px 0 0 -30px;
+  border-radius: 50%;
+  border: 3px solid rgba(0, 229, 143, 0.85);
+  animation: fx-shock 820ms cubic-bezier(0.15, 0.7, 0.3, 1) both;
+}
+
+.fx-shockwave-2 {
+  animation-delay: 150ms;
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+@keyframes fx-shock {
+  from { transform: scale(0.2); opacity: 0.9; border-width: 4px; }
+  to   { transform: scale(16); opacity: 0; border-width: 1px; }
+}
+
+/* Sparks thrown out from the centre. */
+.fx-spark {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: #7dffc4;
+  box-shadow: 0 0 8px rgba(0, 229, 143, 0.9);
+  transform: rotate(var(--angle)) translateY(0);
+  animation: fx-spark-out 900ms cubic-bezier(0.1, 0.7, 0.25, 1) var(--delay) both;
+}
+
+@keyframes fx-spark-out {
+  from { transform: rotate(var(--angle)) translateY(0) scale(1); opacity: 1; }
+  to   { transform: rotate(var(--angle)) translateY(calc(var(--dist) * -1)) scale(0.2); opacity: 0; }
+}
+
+/* ---------------------------------------------------------------- losing */
+
+/* Colour drains out, then most of the way back. */
+.fx-desaturate {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: grayscale(1) brightness(0.75);
+  -webkit-backdrop-filter: grayscale(1) brightness(0.75);
+  animation: fx-drain 1500ms ease-out both;
+}
+
+@keyframes fx-drain {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  100% { opacity: 0.18; }
+}
+
+/* Darkness closing in. */
+.fx-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 40%, transparent 30%, rgba(6, 8, 16, 0.82) 100%);
+  animation: fx-vignette-in 1100ms ease-out both;
+}
+
+@keyframes fx-vignette-in {
+  from { opacity: 0; transform: scale(1.35); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Ash. Slow and sparse — deliberately the opposite of confetti. */
+.fx-ash {
+  position: absolute;
+  top: -10px;
+  left: var(--x);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: rgba(190, 200, 215, 0.5);
+  animation: fx-ash-fall var(--dur) linear var(--delay) infinite;
+}
+
+@keyframes fx-ash-fall {
+  from { transform: translate(0, -10px); opacity: 0; }
+  10%  { opacity: 0.7; }
+  90%  { opacity: 0.5; }
+  to   { transform: translate(var(--drift), 105vh); opacity: 0; }
+}
+
+/* ---------------------------------------------------------------- impact */
+
+.fx-shake-win {
+  animation: fx-shake-w 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.fx-shake-loss {
+  animation: fx-shake-l 620ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes fx-shake-w {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-5px, 3px); }
+  30% { transform: translate(6px, -3px); }
+  45% { transform: translate(-4px, 2px); }
+  60% { transform: translate(3px, -2px); }
+  80% { transform: translate(-2px, 1px); }
+}
+
+/* Heavier and slower — it should feel like a drop, not a pop. */
+@keyframes fx-shake-l {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(0, 9px); }
+  25% { transform: translate(-6px, 4px); }
+  40% { transform: translate(5px, 6px); }
+  60% { transform: translate(-4px, 2px); }
+  80% { transform: translate(2px, 3px); }
+}
+
+/* Motion this large has to be opt-out. */
+@media (prefers-reduced-motion: reduce) {
+  .fx-rays,
+  .fx-shockwave,
+  .fx-spark,
+  .fx-ash,
+  .fx-shake-win,
+  .fx-shake-loss {
+    animation: none;
+  }
+  .fx-rays,
+  .fx-shockwave,
+  .fx-spark,
+  .fx-ash {
+    display: none;
+  }
+}

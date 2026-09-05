@@ -11,7 +11,11 @@ import { WebSocket } from 'ws';
 // port per run; PROBE_PORT still pins it when you need a known one.
 const PORT = Number(process.env.PROBE_PORT) || 20000 + Math.floor(Math.random() * 20000);
 const CWD = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DATA = path.join(CWD, 'data.json');
+// Its own directory, not the package default. The default is the same file
+// a dev server running on 8787 writes to, and two processes saving over each
+// other produced failures that had nothing to do with the code under test.
+const DATA_DIR = path.join(CWD, 'test', '.tmp-hardening');
+const DATA = path.join(DATA_DIR, 'data.json');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0;
@@ -21,6 +25,7 @@ const ok = (name, cond, detail = '') => {
   cond ? pass++ : fail++;
 };
 
+fs.mkdirSync(DATA_DIR, { recursive: true });
 const backup = fs.existsSync(DATA) ? fs.readFileSync(DATA, 'utf-8') : '{}';
 
 let server, exited, stderr;
@@ -29,7 +34,7 @@ function boot() {
   stderr = '';
   server = spawn(process.execPath, ['src/index.js'], {
     cwd: CWD,
-    env: { ...process.env, PORT: String(PORT) },
+    env: { ...process.env, PORT: String(PORT), DATA_DIR },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stderr.on('data', (d) => (stderr += d.toString()));

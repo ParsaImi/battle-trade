@@ -43,3 +43,4 @@ server/data.json.tmp
 server/test/.tmp-pvp/
 server/test/.tmp-repro/
 server/test/.tmp-auth/
+server/test/.tmp-hardening/

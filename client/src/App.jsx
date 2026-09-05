@@ -7,6 +7,7 @@ import Matchmaking from './components/Matchmaking';
 import ConfirmLeaveDialog from './components/ConfirmLeaveDialog';
 import WagerModal from './components/WagerModal';
 import AuthModal from './components/AuthModal';
+import RoomModal from './components/RoomModal';
 import { MODE_BY_ID } from './components/gameModes';
 import Toast from './components/Toast';
 import Confetti from './components/Confetti';
@@ -73,6 +74,7 @@ export default function App() {
   // needs a connection to log in on.
   // null when closed, otherwise 'login' | 'signup'.
   const [authOpen, setAuthOpen] = useState(null);
+  const [roomOpen, setRoomOpen] = useState(false);
   const {
     you,
     leaderboard,
@@ -100,6 +102,12 @@ export default function App() {
     findMatch,
     cancelSearch,
     playWithAi,
+    room,
+    roomError,
+    clearRoomError,
+    createRoom,
+    joinRoom,
+    leaveRoom,
     signup,
     login,
     logout,
@@ -255,6 +263,12 @@ export default function App() {
   // The server runs matchmaking: it queues us for a real opponent, then
   // announces who we are facing. Nothing starts locally any more.
   const handlePlay = () => {
+    // Custom is not a game — it opens a private room instead.
+    if (activeMode.room) {
+      clearRoomError();
+      setRoomOpen(true);
+      return;
+    }
     // High Stakes needs a wager chosen before the match can start.
     if (activeMode.wager) {
       setWagerOpen(true);
@@ -375,6 +389,25 @@ export default function App() {
 
       {confirmLeaveOpen && (
         <ConfirmLeaveDialog onConfirm={confirmLeave} onCancel={() => setConfirmLeaveOpen(false)} />
+      )}
+
+      {/* Private rooms: opening one, or sitting in one waiting for a friend. */}
+      {(roomOpen || room) && (
+        <RoomModal
+          room={room}
+          error={roomError}
+          coins={you?.coins ?? 0}
+          onCreate={createRoom}
+          onJoin={joinRoom}
+          onLeave={() => {
+            leaveRoom();
+            setRoomOpen(false);
+          }}
+          onClose={() => {
+            setRoomOpen(false);
+            clearRoomError();
+          }}
+        />
       )}
 
       {authOpen && (

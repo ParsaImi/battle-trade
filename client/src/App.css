@@ -3654,3 +3654,142 @@ button.id-badge-title {
     font-size: 11px;
   }
 }
+
+/* The end-of-match effects are absolutely positioned, so the screen they sit
+   on has to be their containing block, and the card has to stay above them. */
+.match-screen-complete {
+  position: relative;
+  overflow: hidden;
+}
+
+.match-screen-complete .match-complete-card {
+  position: relative;
+  z-index: 4;
+}
+
+/* ==========================================================================
+   Private rooms
+   ========================================================================== */
+
+.room-code {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 0 10px;
+  cursor: pointer;
+}
+
+.room-code-char {
+  min-width: 42px;
+  padding: 12px 0;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border-top);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.room-copy {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  margin-bottom: 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent-2, #4dd8ff);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.room-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.room-modes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.room-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border-top);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.room-mode.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.room-mode-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.room-mode-name {
+  font-weight: 600;
+}
+
+.room-wagers {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.room-wager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 40px;
+  padding: 0 4px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border-top);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.room-wager.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.room-wager:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.room-code-input {
+  text-align: center;
+  font-family: var(--display);
+  font-size: 26px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}

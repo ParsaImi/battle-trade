@@ -554,6 +554,70 @@ async function run() {
   chart.close();
   await sleep(200);
 
+  // --- private rooms --------------------------------------------------------
+  const host = await connect('pvp-room-host-00001', 'Host');
+  const mate = await connect('pvp-room-mate-00001', 'Mate');
+  await sleep(300);
+
+  host.send({ type: 'create_room', mode: 'classic' });
+  const made = await waitFor(host, (f) => f.type === 'room', 6000, 'room created');
+  ok(made.ok === true && made.status === 'waiting', 'a room opens and reports itself waiting');
+  ok(/^[A-Z0-9]{5}$/.test(made.code || ''), 'the code is 5 readable characters (' + made.code + ')');
+  ok(!/[ILO01]/.test(made.code || ''), 'and avoids the characters people mistype (I, L, O, 0, 1)');
+
+  // A wrong code must not silently do nothing.
+  mate.send({ type: 'join_room', code: 'ZZZZZ' });
+  const missing = await waitFor(mate, (f) => f.type === 'room' && f.ok === false, 6000, 'bad code');
+  ok(missing.reason === 'room_not_found', 'an unknown code is refused (' + missing.reason + ')');
+
+  // You cannot join your own room. Wait out the match-creation cooldown
+  // first: create_room set it, and it also throttles code guessing.
+  await sleep(900);
+  host.send({ type: 'join_room', code: made.code });
+  const own = await waitFor(host, (f) => f.type === 'room' && f.ok === false, 6000, 'own room');
+  ok(own.reason === 'own_room', 'joining your own room is refused');
+
+  // The real thing.
+  await sleep(900);
+  mate.send({ type: 'join_room', code: made.code });
+  const hostFound = await waitFor(host, (f) => f.type === 'matchmaking' && f.status === 'found', 8000, 'host found');
+  const mateFound = await waitFor(mate, (f) => f.type === 'matchmaking' && f.status === 'found', 8000, 'mate found');
+  ok(hostFound.pvp === true && mateFound.pvp === true, 'the code pairs the two as a real PvP match');
+  ok(hostFound.opponent?.nickname === 'Mate' && mateFound.opponent?.nickname === 'Host',
+     'and they face each other, not strangers from the queue');
+
+  await waitFor(host, (f) => f.type === 'match', 8000, 'host match');
+  await waitFor(mate, (f) => f.type === 'match', 8000, 'mate match');
+  ok(host.matches[0].mode === 'classic', 'the room plays the mode the host picked');
+
+  // The code is consumed: a third player cannot walk into the same room.
+  const third = await connect('pvp-room-third-0001', 'Third');
+  await sleep(250);
+  third.send({ type: 'join_room', code: made.code });
+  const reused = await waitFor(third, (f) => f.type === 'room' && f.ok === false, 6000, 'reused code');
+  ok(reused.reason === 'room_not_found', 'the code cannot be used twice');
+  third.close();
+  host.close();
+  mate.close();
+  await sleep(300);
+
+  // A host who disconnects takes the room with them.
+  const ghost = await connect('pvp-room-ghost-0001', 'Ghost');
+  await sleep(250);
+  ghost.send({ type: 'create_room', mode: 'blitz' });
+  const ghostRoom = await waitFor(ghost, (f) => f.type === 'room' && f.ok, 6000, 'ghost room');
+  ghost.close();
+  await sleep(600);
+
+  const seeker = await connect('pvp-room-seek-00001', 'Seeker');
+  await sleep(250);
+  seeker.send({ type: 'join_room', code: ghostRoom.code });
+  const gone = await waitFor(seeker, (f) => f.type === 'room' && f.ok === false, 6000, 'ghost gone');
+  ok(['room_not_found', 'host_left'].includes(gone.reason),
+     'a room dies with the host who opened it (' + gone.reason + ')');
+  seeker.close();
+  await sleep(200);
+
   await sleep(200);
   console.log(`\n${pass} passed, ${fail} failed`);
   server.kill();

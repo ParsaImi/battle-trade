@@ -109,6 +109,18 @@ export const MODES = {
     clearBonus: 1200,
     stageBonus: 200,
   },
+
+  // Not a game in its own right: it opens a private room and the players pick
+  // which of the real modes to play. Match never sees this id — find_match and
+  // create_room both refuse it.
+  custom: {
+    id: 'custom',
+    name: 'Custom Room',
+    tagline: 'Play a friend with a code',
+    icon: '🎟️',
+    room: true,
+    solo: false,
+  },
 };
 
 export const MODE_IDS = Object.keys(MODES);
@@ -128,6 +140,7 @@ export function publicModeList() {
       icon: m.icon,
       solo: !!m.solo,
       pvp: !!m.pvp,
+      room: !!m.room,
       wager: !!m.wager,
       wagerOptions: m.wagerOptions ?? null,
     };
