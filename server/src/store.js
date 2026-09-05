@@ -33,6 +33,9 @@ const DATA_FILE = path.join(DATA_DIR, 'data.json');
 const TMP_FILE = `${DATA_FILE}.tmp`;
 const BAK_FILE = `${DATA_FILE}.bak`;
 const SAVE_DEBOUNCE_MS = 400;
+// Taking a bracket is three wins against a field; it should be worth far more
+// XP than the 50 a single match pays.
+const TOURNAMENT_XP = 500;
 
 let guests = new Map();
 
@@ -319,6 +322,31 @@ export function takeWager(guestId, amount) {
 }
 
 // Puts a wager back if the match it was taken for never actually started.
+// Entry into a tournament: a tenth of what you hold, so the pot is worth
+// roughly what the field brought to it and a rich player risks more to enter.
+export function takeTournamentEntry(guestId, fee) {
+  const g = guests.get(guestId);
+  if (!g) return false;
+  ensureShape(g);
+  if (fee <= 0 || g.coins < fee) return false;
+  g.coins -= fee;
+  scheduleSave();
+  return true;
+}
+
+export function awardTournament(guestId, prize) {
+  const g = guests.get(guestId);
+  if (!g) return 0;
+  ensureShape(g);
+  g.coins += prize;
+  g.weeklyCoins += prize;
+  g.stats.lifetimeCoins += prize;
+  // Winning eight-player brackets should move the level bar properly.
+  g.xp += TOURNAMENT_XP;
+  scheduleSave();
+  return prize;
+}
+
 export function refundWager(guestId, amount) {
   const g = guests.get(guestId);
   if (!g) return false;

@@ -661,6 +661,59 @@ async function run() {
   for (const c of duo) c.close();
   await sleep(300);
 
+  // --- tournaments ----------------------------------------------------------
+  // The part worth protecting is the money: entry is a tenth of what you hold,
+  // it leaves your balance, and it lands in the pot.
+  const tp = await connect('pvp-tour-000000001', 'Bracketeer');
+  await sleep(400);
+  const tpLobby = tp.frames.filter((f) => f.type === 'lobby').pop();
+  const tourCoinsBefore = tpLobby.you.coins;
+  const tourFee = Math.max(10, Math.floor(tourCoinsBefore * 0.1));
+
+  tp.send({ type: 'find_match', mode: 'tournament' });
+  await sleep(900);
+  const afterFee = tp.frames.filter((f) => f.type === 'lobby').pop();
+  ok(afterFee.you.coins === tourCoinsBefore - tourFee,
+     'entry takes 10% of the balance (' + tourCoinsBefore + ' -> ' + afterFee.you.coins + ', fee ' + tourFee + ')');
+
+  const tourSearching = tp.frames.filter((f) => f.type === 'matchmaking' && f.status === 'searching').pop();
+  ok(tourSearching?.tournament === true, 'the search screen knows this is a tournament');
+  ok(tourSearching?.entryFee === tourFee, 'and reports the fee it charged (' + tourSearching?.entryFee + ')');
+
+  // Nobody else joins, so the field is filled with AI once the wait elapses.
+  const tourBracket = await waitFor(tp, (f) => f.type === 'tournament', WAIT_MS + 8000, 'bracket');
+  ok(tourBracket.bracket.size === 8, 'the bracket is 8 players (' + tourBracket.bracket.size + ')');
+  ok(tourBracket.bracket.prize === tourFee, 'the pot holds the entries (' + tourBracket.bracket.prize + ')');
+  ok(tourBracket.bracket.rounds[0].length === 4, 'the first round has 4 ties');
+  ok(tourBracket.bracket.roundName === 'Quarter-final', 'starting at the quarter-final');
+
+  const tourSeats = tourBracket.bracket.rounds[0].flatMap((t) => [t.a, t.b]);
+  ok(tourSeats.filter((p) => p.you).length === 1, 'the player appears exactly once in the draw');
+  ok(tourSeats.filter((p) => p.isBot).length === 7, 'and the other seven are AI');
+  ok(!JSON.stringify(tourBracket).includes('guestId'), 'the bracket sent to clients carries no guest ids');
+
+
+  // Skipping the wait on a tournament must open the BRACKET, not a stray 1v1.
+  // Getting this wrong would take the entry fee and give back an ordinary
+  // match with no bracket behind it.
+  const skipT = await connect('pvp-tour-skip-00001', 'Skipper');
+  await sleep(400);
+  const skipCoins = skipT.frames.filter((f) => f.type === 'lobby').pop().you.coins;
+  skipT.send({ type: 'find_match', mode: 'tournament' });
+  await waitFor(skipT, (f) => f.type === 'matchmaking' && f.status === 'searching', 5000, 'tourney searching');
+  await sleep(900);
+  skipT.send({ type: 'play_ai' });
+  const skipBracket = await waitFor(skipT, (f) => f.type === 'tournament', 8000, 'skip bracket');
+  ok(!!skipBracket.bracket, 'skipping the wait opens the bracket immediately');
+  ok(skipBracket.bracket.size === 8, 'still a full 8-player field');
+  ok(skipBracket.bracket.prize === Math.max(10, Math.floor(skipCoins * 0.1)),
+     'and the fee that was charged is in the pot (' + skipBracket.bracket.prize + ')');
+  skipT.close();
+  await sleep(300);
+
+  tp.close();
+  await sleep(300);
+
   await sleep(200);
   console.log(`\n${pass} passed, ${fail} failed`);
   server.kill();

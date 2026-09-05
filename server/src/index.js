@@ -11,6 +11,7 @@ import { getMode, publicModeList } from './gameModes.js';
 import { makeBotOpponent, opponentFromProfile } from './opponents.js';
 import * as matchmaking from './matchmaking.js';
 import * as rooms from './rooms.js';
+import { Tournament, entryFeeFor, SIZE as TOURNAMENT_SIZE } from './tournament.js';
 import * as marketData from './marketData.js';
 import { log } from './logger.js';
 import * as store from './store.js';
@@ -107,7 +108,7 @@ function broadcastMatch(match) {
 // Announce the opponent, then start the match once both clients have had the
 // countdown. The opponent identity is decided HERE — including the AI's — so
 // the face on the "found" card is the one actually played against.
-function beginMatch(entries) {
+function beginMatch(entries, opts = {}) {
   const mode = getMode(entries[0].mode);
   const teamSize = mode.teamSize ?? 1;
   const pvp = entries.length > 1;
@@ -165,7 +166,7 @@ function beginMatch(entries) {
       }
       return;
     }
-    createMatch(entries, pvp ? profiles[1] : botIdentity);
+    createMatch(entries, pvp ? profiles[1] : botIdentity, opts);
   }, PREMATCH_MS);
 
   for (const e of entries) {
@@ -174,7 +175,15 @@ function beginMatch(entries) {
   }
 }
 
-function createMatch(entries, opponentIdentity) {
+// Calls opts.onComplete exactly once, with every seat's result, the first time
+// a match reports itself complete. Tournaments use this to advance a bracket.
+function notifyComplete(match, opts) {
+  if (!opts.onComplete || match.phase !== 'complete' || match._completeNotified) return;
+  match._completeNotified = true;
+  opts.onComplete(match.results ?? {});
+}
+
+function createMatch(entries, opponentIdentity, opts = {}) {
   const [creator] = entries;
   const mode = getMode(creator.mode);
   const teamSize = mode.teamSize ?? 1;
@@ -184,7 +193,10 @@ function createMatch(entries, opponentIdentity) {
     const needed = teamSize * 2;
     const seats = Array.from({ length: needed }, (_, i) => ({ guestId: entries[i]?.guestId ?? null }));
     try {
-      match = new TeamMatch(seats, () => broadcastMatch(match), {
+      match = new TeamMatch(seats, () => {
+        broadcastMatch(match);
+        notifyComplete(match, opts);
+      }, {
         mode: mode.id,
         wager: creator.wager,
       });
@@ -213,7 +225,10 @@ function createMatch(entries, opponentIdentity) {
     // `match` is deliberately read inside the callback rather than captured:
     // the constructor runs its first phase silently, so onChange cannot fire
     // before this assignment completes (HANDOFF section 10).
-    match = new Match(creator.guestId, () => broadcastMatch(match), {
+    match = new Match(creator.guestId, () => {
+      broadcastMatch(match);
+      notifyComplete(match, opts);
+    }, {
       mode: mode.id,
       wager: creator.wager,
       opponent: opponentIdentity,
@@ -238,6 +253,117 @@ function createMatch(entries, opponentIdentity) {
     m.match = match;
   }
   broadcastMatch(match);
+}
+
+// --- tournaments ----------------------------------------------------------
+// The bracket itself is pure state in tournament.js. This is the part that
+// turns a round of pairings into real matches, waits for them, and pays out.
+
+// guestId -> Tournament, so a disconnect can find the bracket a player is in.
+const tournamentOf = new Map();
+
+function sendTournament(t, extra = {}) {
+  for (const p of t.players) {
+    if (!p.guestId) continue;
+    const target = socketByGuest.get(p.guestId);
+    if (!target) continue;
+    send(target, { type: 'tournament', bracket: t.publicState(p.guestId), ...extra });
+  }
+}
+
+// Play out (or decide) every tie in the current round.
+function runTournamentRound(t) {
+  // A tie with nobody human in it is decided rather than simulated: there is
+  // no one to watch it, and it would only hold the bracket up.
+  for (const tie of t.currentTies) {
+    if (tie.winner === null) t.decideBotTie(tie);
+  }
+  sendTournament(t);
+
+  for (const tie of t.currentTies) {
+    if (tie.winner !== null) continue;
+    const a = t.player(tie.a);
+    const b = t.player(tie.b);
+    const humans = [a, b].filter((p) => p.guestId && socketByGuest.get(p.guestId));
+
+    // Everyone in this tie has gone offline — settle it and move on.
+    if (humans.length === 0) {
+      t.reportWinner(tie, Math.random() < 0.5 ? tie.a : tie.b);
+      continue;
+    }
+
+    const entries = humans.map((p) => ({
+      guestId: p.guestId,
+      ws: socketByGuest.get(p.guestId),
+      mode: 'classic',
+      wager: 0,
+    }));
+
+    beginMatch(entries, {
+      onComplete: (results) => {
+        if (tie.winner !== null) return;
+        let winnerSeat;
+        if (humans.length === 2) {
+          const aWon = results[a.guestId] && results[a.guestId].outcome === 'win';
+          const bWon = results[b.guestId] && results[b.guestId].outcome === 'win';
+          // A draw is settled on a coin flip rather than replayed.
+          winnerSeat = aWon ? tie.a : bWon ? tie.b : Math.random() < 0.5 ? tie.a : tie.b;
+        } else {
+          const human = humans[0];
+          const humanSeat = human.seat;
+          const otherSeat = humanSeat === tie.a ? tie.b : tie.a;
+          const res = results[human.guestId];
+          winnerSeat = res && res.outcome === 'win' ? humanSeat : otherSeat;
+        }
+        finishTie(t, tie, winnerSeat);
+      },
+    });
+  }
+
+  maybeFinishRound(t);
+}
+
+// Opens a bracket for whoever is in the group and fills the rest with AI.
+function startBracket(group) {
+  const t = new Tournament(group.map((g) => ({ guestId: g.guestId, fee: g.fee ?? 0 })));
+  for (const p of t.players) {
+    if (p.guestId) tournamentOf.set(p.guestId, t);
+  }
+  sendTournament(t, { started: true });
+  // A beat before the first round, so the bracket can be read.
+  setTimeout(() => runTournamentRound(t), 3000);
+  return t;
+}
+
+function finishTie(t, tie, winnerSeat) {
+  t.reportWinner(tie, winnerSeat);
+  sendTournament(t);
+  maybeFinishRound(t);
+}
+
+function maybeFinishRound(t) {
+  if (!t.currentTies.every((x) => x.winner !== null)) return;
+
+  if (t.isComplete) {
+    const champ = t.champion;
+    if (champ && champ.guestId) {
+      const paid = store.awardTournament(champ.guestId, t.prize);
+      log.info('tournament ' + t.id + ': ' + champ.guestId + ' took ' + paid + ' coins');
+    }
+    sendTournament(t, { finished: true, prize: t.prize });
+    for (const p of t.players) {
+      if (!p.guestId) continue;
+      tournamentOf.delete(p.guestId);
+      const target = socketByGuest.get(p.guestId);
+      if (target) sendLobby(target, p.guestId);
+    }
+    return;
+  }
+
+  t.advance();
+  sendTournament(t);
+  // A short breath between rounds, so the bracket update is legible.
+  setTimeout(() => runTournamentRound(t), 2500);
 }
 
 // Leave the queue and abandon any match still counting down. Used by an
@@ -456,6 +582,41 @@ function handleMessage(ws, meta, msg) {
 
       const entry = { guestId: meta.guestId, ws, mode: mode.id, wager };
 
+      // Tournaments gather eight, charge a tenth of what each player holds,
+      // and pool it. tournament.js owns the bracket from there.
+      if (mode.bracket) {
+        const me = store.getGuestPublic(meta.guestId);
+        const fee = entryFeeFor(me?.coins ?? 0);
+        if (!store.takeTournamentEntry(meta.guestId, fee)) {
+          send(ws, { type: 'match_error', reason: 'not_enough_coins' });
+          sendLobby(ws, meta.guestId);
+          return;
+        }
+        sendLobby(ws, meta.guestId);
+
+        const state = matchmaking.join(
+          { guestId: meta.guestId, ws, mode: mode.id, wager: 0, fee },
+          {
+            groupSize: TOURNAMENT_SIZE,
+            onPair: (...group) => startBracket(group),
+            // Nobody else turned up: run the bracket with an AI field. The
+            // entry fee stands, and so does the pot it went into.
+            onTimeout: (alone) => startBracket([alone]),
+          },
+        );
+        if (state === 'waiting') {
+          send(ws, {
+            type: 'matchmaking',
+            status: 'searching',
+            waitMs: matchmaking.WAIT_MS,
+            startedAt: Date.now(),
+            tournament: true,
+            entryFee: fee,
+          });
+        }
+        return;
+      }
+
       // A PvP mode looks for a real opponent first, and only falls back to
       // the AI once the full wait has elapsed with nobody found.
       if (mode.pvp) {
@@ -598,6 +759,13 @@ function handleMessage(ws, meta, msg) {
       // Not searching — nothing to skip. Ignore rather than starting a second
       // match on top of whatever they are already doing.
       if (!entry) return;
+      // A tournament entry is not a match: skipping the wait has to open the
+      // bracket with an AI field, or the entry fee would vanish into an
+      // ordinary 1v1 with no bracket behind it.
+      if (getMode(entry.mode).bracket) {
+        startBracket([entry]);
+        return;
+      }
       beginMatch([entry]);
       return;
     }

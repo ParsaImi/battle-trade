@@ -134,6 +134,28 @@ export const MODES = {
   // Not a game in its own right: it opens a private room and the players pick
   // which of the real modes to play. Match never sees this id — find_match and
   // create_room both refuse it.
+  tournament: {
+    id: 'tournament',
+    name: 'Tournament',
+    tagline: '8 players, one winner takes the pot',
+    icon: '🥇',
+    solo: false,
+    // Every tie inside the bracket is an ordinary 1v1.
+    minRounds: 3,
+    winByTwo: true,
+    maxRounds: 11,
+    guessMs: 10_000,
+    revealMs: 2_600,
+    resultsMs: 2_600,
+    botAccuracy: 0.5,
+    affectsStreak: true,
+    pvp: true,
+    // Entry is 10% of what you hold; every entry goes into one pot and the
+    // player who wins three ties takes it. Handled by tournament.js, not by
+    // Match — this flag is what routes find_match there.
+    bracket: true,
+  },
+
   custom: {
     id: 'custom',
     name: 'Custom Room',
@@ -162,6 +184,7 @@ export function publicModeList() {
       solo: !!m.solo,
       pvp: !!m.pvp,
       room: !!m.room,
+      bracket: !!m.bracket,
       teamSize: m.teamSize ?? 1,
       wager: !!m.wager,
       wagerOptions: m.wagerOptions ?? null,

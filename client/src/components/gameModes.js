@@ -65,6 +65,17 @@ export const MODE_LIST = [
     wager: false,
   },
   {
+    id: 'tournament',
+    name: 'Tournament',
+    tagline: '8 players, one winner takes the pot',
+    icon: '🥇',
+    blurb: 'Entry costs a tenth of your coins. Eight players enter, every entry goes into one pot, and three wins takes it.',
+    solo: false,
+    pvp: true,
+    bracket: true,
+    wager: false,
+  },
+  {
     id: 'custom',
     name: 'Custom Room',
     tagline: 'Play a friend with a code',

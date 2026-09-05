@@ -56,7 +56,9 @@ export default function Matchmaking({ search, avatar, nickname, onCancel, onPlay
         <p className="mm-sub">Looking for a live opponent…</p>
         <p className="mm-search-timer" aria-live="polite">
           {left > 0
-            ? search.soloFallback
+            ? search.tournament
+              ? `No one yet — ${left}s until the field is filled with AI`
+              : search.soloFallback
               ? `No one yet — ${left}s until you start a solo run`
               : `No one yet — ${left}s until you're matched with an AI opponent`
             : 'Setting up your match…'}

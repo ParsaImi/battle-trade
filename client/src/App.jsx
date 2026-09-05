@@ -8,6 +8,7 @@ import ConfirmLeaveDialog from './components/ConfirmLeaveDialog';
 import WagerModal from './components/WagerModal';
 import AuthModal from './components/AuthModal';
 import RoomModal from './components/RoomModal';
+import TournamentView from './components/TournamentView';
 import { MODE_BY_ID } from './components/gameModes';
 import Toast from './components/Toast';
 import Confetti from './components/Confetti';
@@ -102,6 +103,8 @@ export default function App() {
     findMatch,
     cancelSearch,
     playWithAi,
+    tournament,
+    leaveTournament,
     room,
     roomError,
     clearRoomError,
@@ -345,7 +348,15 @@ export default function App() {
       <Toast text={dailyBonus ? `+${dailyBonus} daily login bonus!` : null} toastKey={dailyBonus} />
       <Toast text={toast?.text} toastKey={toast?.key} kind={toast?.kind} offset={dailyBonus ? 52 : 0} />
 
-      {search ? (
+      {/* A bracket takes over the screen between ties. A live match still
+          wins, so you are never staring at a bracket mid-round. */}
+      {tournament && !match && !search ? (
+        <TournamentView
+          bracket={tournament}
+          finished={tournament.finished}
+          onLeave={leaveTournament}
+        />
+      ) : search ? (
         <Matchmaking
           search={search}
           avatar={you?.avatar || 'nomad'}

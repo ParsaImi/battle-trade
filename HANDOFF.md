@@ -131,7 +131,7 @@ a match never fails for want of data. **Do not delete it.**
 
 The opponent always calls Up/Down (never Hold) at its mode's accuracy.
 
-### The 5 modes
+### The modes
 
 | Mode | Structure | Opponent | Payout |
 |---|---|---|---|
@@ -140,6 +140,21 @@ The opponent always calls Up/Down (never Hold) at its mode's accuracy.
 | **Blitz** ⚡ | 60-second session clock, 4s per round | **a real player**, else solo | 25 × net points |
 | **High Stakes** 🎰 | Like Classic; wager 100/250/500/1000 up front | **a real player**, else 58% AI | win = 2× wager, draw = refund, loss = 0 |
 | **Gauntlet** 🏆 | 3 stages × 3 rounds, must lead to advance | **a real player**, else Rookie 50% → Pro 62% → Legend 72% | 200/stage + 1200 clear bonus |
+| **Duos 2v2** 🤝 | Like Classic, four players two a side | 3 real players, AI fills the rest | team result, standard payout |
+| **Tournament** 🥇 | 8-player single elimination, 3 ties to win | 7 real players, AI fills the rest | the whole pot |
+| **Custom Room** 🎟️ | Not a game — opens a private room with a share code | whoever you send the code to | whatever the chosen mode pays |
+
+**Duos** scores per TEAM as the sum of its two calls, which gives both-right = +2, both-wrong =
+-2 and split = 0 without a special case. It is `server/src/teamMatch.js`, deliberately separate
+from `Match`: Match carries Survival/Blitz/Gauntlet across two seats and most of the suite covers
+it, while Duos needs only the Classic ruleset.
+
+**Tournament** entry is `max(10, floor(coins * 0.10))`, every entry goes into one pot, and the
+champion takes it plus 500 XP. `server/src/tournament.js` holds the bracket as pure state and
+creates no matches; `index.js` turns each round of pairings into real matches and reports winners
+back. A tie with no human in it is decided rather than simulated. **Watch out:** `play_ai` has to
+open the bracket for a bracket mode — routing it through `beginMatch` takes the entry fee and
+gives back an ordinary 1v1. There is a test for that.
 
 Solo modes do **not** affect the win streak.
 

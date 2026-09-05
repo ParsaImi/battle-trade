@@ -33,6 +33,8 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
   const [authError, setAuthError] = useState(null);
   // Private room the player is hosting, plus the last room-related error.
   const [room, setRoom] = useState(null);
+  // Live tournament bracket, when the player is in one.
+  const [tournament, setTournament] = useState(null);
   const [roomError, setRoomError] = useState(null);
   const [authBusy, setAuthBusy] = useState(false);
   // Reactions the opponent has sent us, drained by the match view.
@@ -120,6 +122,9 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
           setMatch(msg.match);
         } else if (msg.type === 'emote') {
           setIncomingEmote({ emoji: msg.emoji, key: `${Date.now()}-${Math.random()}` });
+        } else if (msg.type === 'tournament') {
+          setSearch(null);
+          setTournament({ ...msg.bracket, finished: !!msg.finished });
         } else if (msg.type === 'room') {
           if (msg.ok) {
             setRoomError(null);
@@ -260,6 +265,8 @@ export function useGameSocket(guestId, nickname, token, setToken, wantConnection
     },
     logout: () => send({ type: 'logout', token: tokenRef.current }),
     findMatch: (mode = 'classic', wager = 0) => send({ type: 'find_match', mode, wager }),
+    tournament,
+    leaveTournament: () => setTournament(null),
     room,
     roomError,
     clearRoomError: () => setRoomError(null),
