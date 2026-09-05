@@ -13,6 +13,17 @@ export const MODE_LIST = [
     wager: false,
   },
   {
+    id: 'duo',
+    name: 'Duos 2v2',
+    tagline: 'Two of you, one call each',
+    icon: '🤝',
+    blurb: 'Two a side. Agree and you score double — disagree and you cancel each other out.',
+    solo: false,
+    pvp: true,
+    teamSize: 2,
+    wager: false,
+  },
+  {
     id: 'survival',
     name: 'Survival',
     tagline: 'One wrong call and it’s over',

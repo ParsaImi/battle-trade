@@ -618,6 +618,49 @@ async function run() {
   seeker.close();
   await sleep(200);
 
+  // --- Duos 2v2 -------------------------------------------------------------
+  // The rule to hold: a team scores the SUM of its two calls, so both right
+  // is +2, both wrong is -2, and one of each is 0.
+  const duo = [];
+  for (let i = 0; i < 4; i++) duo.push(await connect('pvp-duo-000000' + i, 'Duo' + i));
+  await sleep(400);
+  for (const c of duo) { c.send({ type: 'find_match', mode: 'duo' }); await sleep(200); }
+
+  const found = await waitFor(duo[0], (f) => f.type === 'matchmaking' && f.status === 'found', 10000, 'duo found');
+  ok(found.team === true, 'four players in Duos are grouped into a team match');
+  ok(!!found.teammate, 'and each is told who they are playing WITH (' + found.teammate?.nickname + ')');
+
+  const m0 = await waitFor(duo[0], (f) => f.type === 'match', 10000, 'duo match');
+  await waitFor(duo[3], (f) => f.type === 'match', 10000, 'duo match 3');
+  ok(m0.match.team === true, 'the match reports itself as a team match');
+  ok(m0.match.yourTeam?.length === 2 && m0.match.theirTeam?.length === 2,
+     'both line-ups are two a side (' + m0.match.yourTeam?.length + ' v ' + m0.match.theirTeam?.length + ')');
+  ok(m0.match.yourTeam.some((p) => p.you), 'you are marked in your own line-up');
+
+  // Nobody may see what anyone called before the round resolves.
+  const rawGuess = JSON.stringify(m0.match);
+  ok(!/"guess":"(up|down)"/.test(rawGuess), 'no call is exposed during the guess phase');
+
+  // Everyone on team A calls up, everyone on team B calls down. Whichever way
+  // the chart went, one team gets +2 and the other -2.
+  const teamOf = {};
+  for (let i = 0; i < 4; i++) {
+    const st = duo[i].matches[duo[i].matches.length - 1];
+    teamOf[i] = st.yourTeam.findIndex((p) => p.you) >= 0 ? i : i;
+  }
+  for (let i = 0; i < 4; i++) duo[i].send({ type: 'match_guess', direction: i < 2 ? 'up' : 'down' });
+
+  const rev = await waitFor(duo[0], (f) => f.type === 'match' && f.match.roundOutcome, 12000, 'duo reveal');
+  const rev3 = await waitFor(duo[3], (f) => f.type === 'match' && f.match.roundOutcome, 12000, 'duo reveal 3');
+  const d0 = rev.match.roundOutcome.playerDelta;
+  const d3 = rev3.match.roundOutcome.playerDelta;
+  ok(Math.abs(d0) === 2, 'a team that agreed scores +/-2, not +/-1 (' + d0 + ')');
+  ok(d0 === -d3, 'the two teams are exact opposites this round (' + d0 + ' / ' + d3 + ')');
+  ok(rev.match.roundOutcome.botDelta === d3, "and each side sees the other's total");
+
+  for (const c of duo) c.close();
+  await sleep(300);
+
   await sleep(200);
   console.log(`\n${pass} passed, ${fail} failed`);
   server.kill();

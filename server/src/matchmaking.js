@@ -31,14 +31,18 @@ function key(entry) {
  * Join the queue.
  *
  * @param entry { guestId, ws, mode, wager }
- * @param handlers { onPair(a, b), onTimeout(entry) }
+ * @param handlers { onPair(...entries), onTimeout(entry), groupSize }
+ *        groupSize is how many players the mode needs — 2 for a duel, 4 for
+ *        Duos. onPair is called with exactly that many entries.
  * @returns 'paired' | 'waiting'
  */
-export function join(entry, { onPair, onTimeout }) {
+export function join(entry, { onPair, onTimeout, groupSize = 2 }) {
   // Drop any previous entry for this player first, so a double-click or a
   // second tab can't put the same guestId in the queue twice.
   leave(entry.guestId);
 
+  // Everyone already waiting for the same thing.
+  const peers = [];
   for (const [otherId, other] of waiting) {
     if (otherId === entry.guestId) continue;
     if (key(other) !== key(entry)) continue;
@@ -47,10 +51,15 @@ export function join(entry, { onPair, onTimeout }) {
       leave(otherId);
       continue;
     }
+    peers.push(other);
+    if (peers.length >= groupSize - 1) break;
+  }
 
-    leave(otherId);
-    log.info(`matchmaking: paired ${otherId} vs ${entry.guestId} (${key(entry)})`);
-    onPair(other, entry);
+  if (peers.length >= groupSize - 1) {
+    for (const p of peers) leave(p.guestId);
+    const group = [...peers, entry];
+    log.info(`matchmaking: grouped ${group.map((g) => g.guestId).join(', ')} (${key(entry)})`);
+    onPair(...group);
     return 'paired';
   }
 

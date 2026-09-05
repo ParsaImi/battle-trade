@@ -6,6 +6,7 @@ import { WebSocketServer } from 'ws';
 import { nanoid } from 'nanoid';
 
 import { Match } from './match.js';
+import { TeamMatch } from './teamMatch.js';
 import { getMode, publicModeList } from './gameModes.js';
 import { makeBotOpponent, opponentFromProfile } from './opponents.js';
 import * as matchmaking from './matchmaking.js';
@@ -108,21 +109,47 @@ function broadcastMatch(match) {
 // the face on the "found" card is the one actually played against.
 function beginMatch(entries) {
   const mode = getMode(entries[0].mode);
-  const pvp = entries.length === 2;
+  const teamSize = mode.teamSize ?? 1;
+  const pvp = entries.length > 1;
   const startsAt = Date.now() + PREMATCH_MS;
 
   const profiles = entries.map((e) => opponentFromProfile(store.getGuestPublic(e.guestId)));
   const botIdentity = !pvp && !mode.solo ? makeBotOpponent() : null;
 
-  entries.forEach((entry, i) => {
-    send(entry.ws, {
-      type: 'matchmaking',
-      status: 'found',
-      pvp,
-      opponent: pvp ? profiles[1 - i] : botIdentity,
-      startsAt,
+  if (teamSize > 1) {
+    // Duos: whoever turned up fills seats in order, and any seat still empty
+    // is an AI. Seats 0,1 are one team and 2,3 the other, so a pair that
+    // queued together does NOT end up on the same side by accident — they are
+    // spread by arrival order, same as everyone else.
+    const needed = teamSize * 2;
+    const seats = Array.from({ length: needed }, (_, i) => ({ guestId: entries[i]?.guestId ?? null }));
+    const identities = seats.map((seat, i) =>
+      seat.guestId ? profiles[i] : makeBotOpponent(),
+    );
+    entries.forEach((entry, i) => {
+      const myTeam = i < teamSize ? 0 : 1;
+      send(entry.ws, {
+        type: 'matchmaking',
+        status: 'found',
+        pvp,
+        team: true,
+        // The face on the card is someone from the other side.
+        opponent: identities[myTeam === 0 ? teamSize : 0],
+        teammate: identities.find((_, k) => k !== i && (k < teamSize) === (myTeam === 0)) ?? null,
+        startsAt,
+      });
     });
-  });
+  } else {
+    entries.forEach((entry, i) => {
+      send(entry.ws, {
+        type: 'matchmaking',
+        status: 'found',
+        pvp,
+        opponent: pvp ? profiles[1 - i] : botIdentity,
+        startsAt,
+      });
+    });
+  }
 
   const timer = setTimeout(() => {
     // If anyone dropped during the countdown, cancel for everyone left and
@@ -150,8 +177,38 @@ function beginMatch(entries) {
 function createMatch(entries, opponentIdentity) {
   const [creator] = entries;
   const mode = getMode(creator.mode);
+  const teamSize = mode.teamSize ?? 1;
 
   let match;
+  if (teamSize > 1) {
+    const needed = teamSize * 2;
+    const seats = Array.from({ length: needed }, (_, i) => ({ guestId: entries[i]?.guestId ?? null }));
+    try {
+      match = new TeamMatch(seats, () => broadcastMatch(match), {
+        mode: mode.id,
+        wager: creator.wager,
+      });
+    } catch (err) {
+      log.error('failed to start team match', err);
+      for (const e of entries) {
+        const m = sockets.get(e.ws);
+        if (m) m.pendingStart = null;
+        if (e.wager > 0) store.refundWager(e.guestId, e.wager);
+        send(e.ws, { type: 'match_error', reason: 'start_failed' });
+        sendLobby(e.ws, e.guestId);
+      }
+      return;
+    }
+    for (const e of entries) {
+      const m = sockets.get(e.ws);
+      if (!m) continue;
+      m.pendingStart = null;
+      m.match = match;
+    }
+    broadcastMatch(match);
+    return;
+  }
+
   try {
     // `match` is deliberately read inside the callback rather than captured:
     // the constructor runs its first phase silently, so onChange cannot fire
@@ -403,7 +460,8 @@ function handleMessage(ws, meta, msg) {
       // the AI once the full wait has elapsed with nobody found.
       if (mode.pvp) {
         const state = matchmaking.join(entry, {
-          onPair: (a, b) => beginMatch([a, b]),
+          groupSize: (mode.teamSize ?? 1) * 2,
+          onPair: (...group) => beginMatch(group),
           onTimeout: (alone) => beginMatch([alone]),
         });
         if (state === 'waiting') {

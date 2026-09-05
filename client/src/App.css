@@ -3793,3 +3793,72 @@ button.id-badge-title {
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
+
+/* ==========================================================================
+   Duos 2v2 scoreboard
+   ========================================================================== */
+
+.team-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 4px 0 2px;
+}
+
+.team-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 96px;
+  opacity: 0.72;
+  transition: opacity 200ms ease;
+}
+
+.team-side.leading {
+  opacity: 1;
+}
+
+.team-avatars {
+  display: flex;
+  /* Overlapped, so a pair reads as one side rather than two players. */
+  margin-left: 8px;
+}
+
+.team-avatar {
+  width: 40px;
+  height: 40px;
+  margin-left: -8px;
+  border-radius: 50%;
+  overflow: hidden;
+  line-height: 0;
+  background: var(--panel-2);
+  border: 2px solid var(--bg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.team-avatar.is-you {
+  border-color: var(--accent);
+}
+
+/* Their call is in — but not what it was. */
+.team-avatar.locked {
+  box-shadow: 0 0 0 2px var(--up), 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.team-names {
+  font-size: 11px;
+  color: var(--text-dim);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 460px) {
+  .team-row { gap: 10px; }
+  .team-side { min-width: 84px; }
+  .team-avatar { width: 34px; height: 34px; }
+  .team-names { font-size: 10px; max-width: 110px; }
+}

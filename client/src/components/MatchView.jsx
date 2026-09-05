@@ -301,7 +301,39 @@ export default function MatchView({
           </div>
         )}
 
-        {match.solo ? (
+        {match.team ? (
+          /* Duos: two a side, and the score belongs to the team rather than
+             to either player. */
+          <div className="team-row">
+            <div className={`team-side ${myScore > theirScore ? 'leading' : ''}`}>
+              <div className="team-avatars">
+                {match.yourTeam.map((p, i) => (
+                  <div key={i} className={`team-avatar ${p.you ? 'is-you' : ''} ${p.lockedIn ? 'locked' : ''}`}>
+                    <Avatar id={p.avatar} />
+                  </div>
+                ))}
+              </div>
+              <span className="team-names">
+                {match.yourTeam.map((p) => (p.you ? 'You' : p.nickname)).join(' + ')}
+              </span>
+              <span className="matchup-score">{myScore}</span>
+            </div>
+
+            <div className="matchup-vs">VS</div>
+
+            <div className={`team-side ${theirScore > myScore ? 'leading' : ''}`}>
+              <div className="team-avatars">
+                {match.theirTeam.map((p, i) => (
+                  <div key={i} className={`team-avatar ${p.lockedIn ? 'locked' : ''}`}>
+                    <Avatar id={p.avatar} />
+                  </div>
+                ))}
+              </div>
+              <span className="team-names">{match.theirTeam.map((p) => p.nickname).join(' + ')}</span>
+              <span className="matchup-score">{theirScore}</span>
+            </div>
+          </div>
+        ) : match.solo ? (
           <div className="solo-scoreboard">
             <div className="solo-avatar"><Avatar id={you?.avatar} /></div>
             <div className="solo-score-block">

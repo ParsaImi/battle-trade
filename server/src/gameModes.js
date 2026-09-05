@@ -26,6 +26,27 @@ export const MODES = {
     pvp: true,
   },
 
+  duo: {
+    id: 'duo',
+    name: 'Duos 2v2',
+    tagline: 'Two of you, one call each',
+    icon: '🤝',
+    solo: false,
+    minRounds: 3,
+    winByTwo: true,
+    maxRounds: 11,
+    guessMs: 10_000,
+    revealMs: 2_600,
+    resultsMs: 2_600,
+    botAccuracy: 0.5,
+    affectsStreak: true,
+    pvp: true,
+    // Four players, two a side. A round is scored per team as the sum of its
+    // two calls: both right is +2, both wrong is -2, and one of each cancels
+    // out to 0 — which is exactly what summing two +1/-1 calls gives you.
+    teamSize: 2,
+  },
+
   survival: {
     id: 'survival',
     name: 'Survival',
@@ -141,6 +162,7 @@ export function publicModeList() {
       solo: !!m.solo,
       pvp: !!m.pvp,
       room: !!m.room,
+      teamSize: m.teamSize ?? 1,
       wager: !!m.wager,
       wagerOptions: m.wagerOptions ?? null,
     };
